@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -45,7 +46,6 @@ export default function ChatPage() {
       if (session) {
         setUserId(session.user.id);
       } else {
-        // Handle guest or unauthenticated user
         const isGuest = sessionStorage.getItem('isGuest') === 'true';
         if (!isGuest) {
             router.push('/');
@@ -112,10 +112,13 @@ export default function ChatPage() {
       return;
     }
     
-    if (userId) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const currentUserId = session?.user?.id;
+
+    if (currentUserId) {
        const { data, error } = await supabase
         .from('therapy_sessions')
-        .insert({ user_id: userId, session_data: { messages } })
+        .insert({ user_id: currentUserId, session_data: { messages } })
         .select('id')
         .single();
 
