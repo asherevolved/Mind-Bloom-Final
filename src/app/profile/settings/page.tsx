@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,29 +9,110 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Bell, Download, Trash2, Moon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { User, Bell, Download, Trash2, Moon, LogOut } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabaseClient';
+import { Skeleton } from '@/components/ui/skeleton';
+
+type Preferences = {
+    dark_mode: boolean;
+    notification_frequency: string;
+};
 
 export default function SettingsPage() {
-  const isGuest = false; // This would be dynamic state
+  const [user, setUser] = useState<{ id: string; email?: string; user_metadata: { full_name?: string } } | null>(null);
+  const [preferences, setPreferences] = useState<Preferences | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGuest, setIsGuest] = useState(false);
+  const { toast } = useToast();
+  const router = useRouter();
+
+  useEffect(() => {
+      const fetchUserData = async () => {
+          setIsLoading(true);
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          if (session?.user) {
+              setUser(session.user);
+              const { data: prefs, error } = await supabase
+                  .from('preferences')
+                  .select('dark_mode, notification_frequency')
+                  .eq('user_id', session.user.id)
+                  .single();
+
+              if (error && error.code !== 'PGRST116') { // Ignore 'no rows found'
+                  toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch preferences.' });
+              } else {
+                  setPreferences(prefs || { dark_mode: false, notification_frequency: 'daily' });
+              }
+          } else {
+            const guest = sessionStorage.getItem('isGuest') === 'true';
+            setIsGuest(guest);
+          }
+          setIsLoading(false);
+      };
+      fetchUserData();
+  }, [toast]);
+
+  const handleUpdatePreferences = async (newPrefs: Partial<Preferences>) => {
+      if (!user || !preferences) return;
+      
+      const updatedPrefs = { ...preferences, ...newPrefs };
+      setPreferences(updatedPrefs);
+
+      const { error } = await supabase
+          .from('preferences')
+          .update(updatedPrefs)
+          .eq('user_id', user.id);
+      
+      if (error) {
+          toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
+          // Revert optimistic update
+          setPreferences(preferences);
+      } else {
+          toast({ title: 'Preferences Saved!' });
+      }
+  };
+  
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    sessionStorage.clear();
+    router.push('/');
+  }
+
+  if (isLoading) {
+    return (
+        <MainAppLayout>
+            <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-8">
+                <Skeleton className="h-10 w-1/2" />
+                <Skeleton className="h-8 w-1/3" />
+                <Skeleton className="h-64 w-full" />
+                <Skeleton className="h-48 w-full" />
+            </div>
+        </MainAppLayout>
+    )
+  }
 
   return (
     <MainAppLayout>
       <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
-        <header className="mb-8">
-          <h1 className="font-headline text-3xl font-bold text-foreground">Profile & Settings</h1>
-          <p className="text-muted-foreground">Manage your account and preferences.</p>
+        <header className="mb-8 flex justify-between items-center">
+            <div>
+                <h1 className="font-headline text-3xl font-bold text-foreground">Profile & Settings</h1>
+                <p className="text-muted-foreground">Manage your account and preferences.</p>
+            </div>
+            <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2"/>Logout</Button>
         </header>
 
         <div className="space-y-8">
-          {isGuest && (
+          {isGuest && !user && (
             <Card className="bg-primary/10 border-primary/50">
               <CardHeader>
                 <CardTitle>You are in Guest Mode</CardTitle>
                 <CardDescription>Sign up to save your progress and unlock all features.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Button className="w-full">Upgrade to a Full Account</Button>
+                <Button className="w-full" onClick={() => router.push('/signup')}>Upgrade to a Full Account</Button>
               </CardContent>
             </Card>
           )}
@@ -42,17 +125,17 @@ export default function SettingsPage() {
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
                   <AvatarImage src="https://placehold.co/100x100.png" data-ai-hint="profile avatar" />
-                  <AvatarFallback>U</AvatarFallback>
+                  <AvatarFallback>{user?.user_metadata.full_name?.[0] || 'U'}</AvatarFallback>
                 </Avatar>
-                <Button variant="outline">Change Photo</Button>
+                <Button variant="outline" disabled>Change Photo</Button>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="name">Display Name</Label>
-                <Input id="name" defaultValue="Explorer" disabled={isGuest} />
+                <Input id="name" defaultValue={user?.user_metadata.full_name || 'User'} disabled={isGuest} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" defaultValue="user@example.com" disabled />
+                <Input id="email" type="email" defaultValue={user?.email} disabled />
               </div>
               <Button disabled={isGuest}>Save Changes</Button>
             </CardContent>
@@ -70,7 +153,11 @@ export default function SettingsPage() {
                     Enable a darker theme for the app.
                   </p>
                 </div>
-                <Switch />
+                <Switch 
+                    checked={preferences?.dark_mode} 
+                    onCheckedChange={(checked) => handleUpdatePreferences({ dark_mode: checked })}
+                    disabled={isGuest}
+                />
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div className="space-y-0.5">
@@ -79,7 +166,7 @@ export default function SettingsPage() {
                     Receive reminders for tasks and journals.
                   </p>
                 </div>
-                <Switch defaultChecked />
+                <Switch defaultChecked disabled={isGuest}/>
               </div>
             </CardContent>
           </Card>

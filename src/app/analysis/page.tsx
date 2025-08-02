@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { analyzeSession, AnalyzeSessionOutput } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function AnalysisPage() {
   const [analysis, setAnalysis] = useState<AnalyzeSessionOutput | null>(null);
@@ -18,37 +19,121 @@ export default function AnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    const transcript = sessionStorage.getItem('chatTranscript');
-    if (!transcript) {
-      setError('No session transcript found. Please start a new chat session.');
-      setIsLoading(false);
-      return;
-    }
+    const processSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user.id;
+      setUserId(currentUserId || null);
 
-    const getAnalysis = async () => {
+      const sessionId = sessionStorage.getItem('sessionId');
+      let transcript = '';
+
+      if (sessionId && currentUserId) {
+        const { data: sessionData, error: sessionError } = await supabase
+          .from('therapy_sessions')
+          .select('session_data')
+          .eq('id', sessionId)
+          .eq('user_id', currentUserId)
+          .single();
+        
+        if (sessionError || !sessionData) {
+          setError('Could not retrieve session data. Please try again.');
+          setIsLoading(false);
+          return;
+        }
+
+        const messages = sessionData.session_data.messages || [];
+        transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
+      } else {
+        const guestSession = sessionStorage.getItem('sessionData');
+        if (guestSession) {
+            const messages = JSON.parse(guestSession).messages || [];
+            transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
+        }
+      }
+
+      if (!transcript) {
+        setError('No session transcript found. Please start a new chat session.');
+        setIsLoading(false);
+        return;
+      }
+
       try {
         const result = await analyzeSession({ transcript });
         setAnalysis(result);
+
+        if (currentUserId && sessionId) {
+          const { error: analysisError } = await supabase.from('analysis').insert({
+            user_id: currentUserId,
+            session_id: sessionId,
+            summary: result.emotionalSummary.summaryText,
+            emotional_insights: result.insights,
+            advice_steps: result.suggestedSteps
+          });
+          if (analysisError) throw analysisError;
+          await awardBadge('self_reflector', 'Self-Reflector', currentUserId);
+        }
+
       } catch (err) {
         console.error(err);
-        setError('Failed to analyze the session. Please try again later.');
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+        setError(`Failed to analyze the session: ${errorMessage}`);
       } finally {
         setIsLoading(false);
+        sessionStorage.removeItem('sessionId');
+        sessionStorage.removeItem('sessionData');
       }
     };
 
-    getAnalysis();
+    processSession();
   }, []);
 
-  const handleAddTask = (title: string) => {
-    // In a real app, this would integrate with a state management solution.
-    // For this prototype, we'll just show a toast.
-    toast({
-      title: 'Task Added!',
-      description: `"${title}" has been added to your list. 💪`,
+  const awardBadge = async (code: string, name: string, currentUserId: string) => {
+    const { data, error } = await supabase
+        .from('badges')
+        .select('id')
+        .eq('user_id', currentUserId)
+        .eq('badge_code', code)
+        .single();
+    
+    if (!data) { // if badge doesn't exist
+        const { error: insertError } = await supabase.from('badges').insert({
+            user_id: currentUserId,
+            badge_code: code,
+            badge_name: name,
+        });
+        if (!insertError) {
+            toast({
+                title: 'Badge Unlocked!',
+                description: `You've earned the "${name}" badge!`,
+                action: <Trophy className="h-5 w-5 text-yellow-500" />
+            });
+        }
+    }
+  }
+
+
+  const handleAddTask = async (title: string) => {
+    if (!userId) {
+        toast({ title: 'Task Added!', description: `(Guest) "${title}" has been added to your list. 💪` });
+        return;
+    }
+    const { error } = await supabase.from('tasks').insert({
+        user_id: userId,
+        title: title,
+        category: 'AI-Suggested'
     });
+
+    if(error){
+        toast({variant: 'destructive', title: 'Error', description: 'Failed to add task.'});
+    } else {
+        toast({
+            title: 'Task Added!',
+            description: `"${title}" has been added to your list. 💪`,
+        });
+    }
   };
 
   if (error) {
@@ -176,7 +261,7 @@ export default function AnalysisPage() {
                 </CardContent>
              </Card>
 
-             {!isLoading && (
+             {!isLoading && analysis && (
                 <div className="flex justify-center">
                     <Badge variant="outline" className="p-2 px-4 text-sm animate-in fade-in duration-500">
                         <Trophy className="h-4 w-4 mr-2 text-yellow-500"/> You've unlocked the "Self-Reflector" badge!

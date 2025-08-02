@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Mic, MicOff, Send, PhoneOff, User } from 'lucide-react';
+import { Bot, Mic, MicOff, Send, PhoneOff, User, Trophy, Volume2 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { therapistChat, TherapistChatInput } from '@/ai/flows/therapist-chat';
 import { useToast } from '@/hooks/use-toast';
@@ -19,22 +19,41 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
+} from "@/components/ui/alert-dialog";
+import { supabase } from '@/lib/supabaseClient';
+import { textToSpeech } from '@/ai/flows/text-to-speech';
 
 type Message = {
   role: 'user' | 'assistant';
   content: string;
+  audioUrl?: string;
 };
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isVoiceMode, setIsVoiceMode] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setUserId(session.user.id);
+      } else {
+        // Handle guest or unauthenticated user
+        const isGuest = sessionStorage.getItem('isGuest') === 'true';
+        if (!isGuest) {
+            router.push('/');
+        }
+      }
+    };
+    checkUser();
+  }, [router]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,11 +68,25 @@ export default function ChatPage() {
       setIsLoading(true);
 
       try {
-        const chatHistory = newMessages.slice(-10); // Use last 10 messages for context
+        const chatHistory = newMessages.slice(-10);
         const response = await therapistChat({ message: input, chatHistory });
-        const aiMessage: Message = { role: 'assistant', content: response.response };
+        
+        let audioUrl: string | undefined = undefined;
+        if(isVoiceMode) {
+          const audioResponse = await textToSpeech({ text: response.response });
+          audioUrl = audioResponse;
+        }
+
+        const aiMessage: Message = { role: 'assistant', content: response.response, audioUrl };
         setMessages(prev => [...prev, aiMessage]);
+
+        if (audioUrl) {
+            const audio = new Audio(audioUrl);
+            audio.play();
+        }
+
       } catch (error) {
+        console.error(error);
         toast({
           variant: 'destructive',
           title: 'Error',
@@ -67,29 +100,44 @@ export default function ChatPage() {
 
   const toggleVoiceMode = () => {
     setIsVoiceMode(!isVoiceMode);
-    if (!isVoiceMode) {
-        // TODO: Start recording logic
-        setIsRecording(true);
-        setInput("Recording... tap mic to stop.")
-    } else {
-        // TODO: Stop recording logic
-        setIsRecording(false);
-        setInput("I heard you, processing...")
-        // TODO: Transcribe and send
-        setTimeout(() => {
-          setInput("");
-        }, 1500)
-    }
+    toast({
+        title: `Voice mode ${!isVoiceMode ? 'enabled' : 'disabled'}.`,
+        description: !isVoiceMode ? 'Replies will now be spoken aloud.' : 'Replies will be text only.'
+    });
   };
   
-  const handleEndSession = () => {
-    const transcript = messages
-      .slice(-10)
-      .map(msg => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`)
-      .join('\n');
+  const handleEndSession = async () => {
+    if (messages.length === 0) {
+      router.push('/dashboard');
+      return;
+    }
     
-    sessionStorage.setItem('chatTranscript', transcript);
-    router.push('/analysis');
+    if (userId) {
+       const { data, error } = await supabase
+        .from('therapy_sessions')
+        .insert({ user_id: userId, session_data: { messages } })
+        .select('id')
+        .single();
+
+        if (error) {
+            toast({ variant: 'destructive', title: 'Error Saving Session', description: error.message });
+            return;
+        }
+        
+        if (data) {
+          sessionStorage.setItem('sessionId', data.id);
+          router.push('/analysis');
+        }
+    } else {
+        // Handle guest mode
+        sessionStorage.setItem('sessionData', JSON.stringify({ messages }));
+        router.push('/analysis');
+    }
+  };
+
+  const playAudio = (audioUrl: string) => {
+    const audio = new Audio(audioUrl);
+    audio.play();
   };
 
   return (
@@ -105,25 +153,30 @@ export default function ChatPage() {
               <p className="text-xs text-green-500">Online</p>
             </div>
           </div>
-           <AlertDialog>
-              <AlertDialogTrigger asChild>
-                 <Button variant="destructive" size="sm">
-                  <PhoneOff className="mr-2 h-4 w-4" /> End Session
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>End your session?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    This will end the current chat session and take you to the analysis page.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Continue Chat</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleEndSession}>End Session & Analyze</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
+           <div className="flex items-center gap-2">
+            <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={toggleVoiceMode} disabled={isLoading}>
+                {isVoiceMode ? <Mic /> : <MicOff />}
+            </Button>
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm">
+                    <PhoneOff className="mr-2 h-4 w-4" /> End Session
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                    <AlertDialogTitle>End your session?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This will end the current chat session and take you to the analysis page.
+                    </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                    <AlertDialogCancel>Continue Chat</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleEndSession}>End Session & Analyze</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
             </AlertDialog>
+           </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -146,6 +199,11 @@ export default function ChatPage() {
                 }`}
               >
                 <p className="whitespace-pre-wrap">{msg.content}</p>
+                {msg.audioUrl && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 mt-1" onClick={() => playAudio(msg.audioUrl!)}>
+                        <Volume2 className="h-4 w-4" />
+                    </Button>
+                )}
               </div>
                {msg.role === 'user' && (
                 <Avatar className="h-8 w-8">
@@ -171,16 +229,13 @@ export default function ChatPage() {
           <div className="flex items-center gap-2">
             <Input
               type="text"
-              placeholder={isRecording ? 'Recording... speak now' : 'Type your message...'}
+              placeholder={'Type your message...'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()}
-              disabled={isRecording || isLoading}
+              disabled={isLoading}
               className="flex-1"
             />
-            <Button size="icon" variant="ghost" onClick={toggleVoiceMode} disabled={isLoading}>
-              {isRecording ? <MicOff className="text-destructive" /> : <Mic />}
-            </Button>
             <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading}>
               <Send />
             </Button>

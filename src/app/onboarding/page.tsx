@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,8 @@ import { Logo } from '@/components/logo';
 import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Hand, Heart, Brain, Zap, Check } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/hooks/use-toast';
 
 const totalSteps = 4;
 
@@ -42,6 +44,29 @@ export default function OnboardingPage() {
   const [sleepQuality, setSleepQuality] = useState<string | null>(null);
   const [supportTags, setSupportTags] = useState<string[]>([]);
   const [therapyTone, setTherapyTone] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
+  
+  const router = useRouter();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const guest = sessionStorage.getItem('isGuest') === 'true';
+      setIsGuest(guest);
+
+      if (!guest) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setUserId(session.user.id);
+        } else {
+          router.push('/');
+        }
+      }
+    };
+    checkUser();
+  }, [router]);
+
 
   const CurrentMoodIcon = moodIcons[Math.floor((mood[0] / 10) * (moodIcons.length - 1))];
 
@@ -52,6 +77,57 @@ export default function OnboardingPage() {
     setSupportTags(prev => 
       prev.includes(id) ? prev.filter(tag => tag !== id) : [...prev, id]
     );
+  };
+  
+  const handleFinish = async () => {
+    if (isGuest) {
+        sessionStorage.setItem('onboardingComplete', 'true');
+        router.push('/dashboard');
+        return;
+    }
+
+    if (!userId) {
+        toast({variant: 'destructive', title: 'Error', description: 'User not found. Please log in again.'});
+        router.push('/');
+        return;
+    }
+
+    const { error: onboardingError } = await supabase.from('onboarding').upsert({
+        user_id: userId,
+        mood_baseline_score: mood[0],
+        sleep_quality_emoji: sleepQuality,
+        support_tags: supportTags,
+        completed: true,
+    }, { onConflict: 'user_id' });
+
+    if (onboardingError) {
+        toast({variant: 'destructive', title: 'Onboarding Error', description: onboardingError.message});
+        return;
+    }
+
+    const { error: prefsError } = await supabase.from('preferences').upsert({
+        user_id: userId,
+        therapy_tone: therapyTone,
+    }, { onConflict: 'user_id' });
+    
+    if (prefsError) {
+        toast({variant: 'destructive', title: 'Preferences Error', description: prefsError.message});
+        return;
+    }
+
+    const { data: badgeData, error: badgeError } = await supabase.from('badges').insert({
+        user_id: userId,
+        badge_code: 'welcome_explorer',
+        badge_name: 'Welcome Explorer',
+    });
+
+    if (badgeError) {
+        toast({variant: 'destructive', title: 'Badge Error', description: `Failed to award badge: ${badgeError.message}`});
+    } else {
+        toast({title: 'Badge Unlocked!', description: 'You earned the "Welcome Explorer" badge!'});
+    }
+
+    router.push('/dashboard');
   };
 
   return (
@@ -155,9 +231,7 @@ export default function OnboardingPage() {
           {step < totalSteps ? (
             <Button onClick={handleNext}>Next</Button>
           ) : (
-            <Link href="/dashboard" passHref>
-              <Button>Let's Begin!</Button>
-            </Link>
+            <Button onClick={handleFinish}>Let's Begin!</Button>
           )}
         </div>
       </div>
