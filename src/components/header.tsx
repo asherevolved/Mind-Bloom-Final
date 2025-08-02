@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Home, Smile, MessageCircle, CheckSquare, User } from 'lucide-react';
+import { Menu, Home, Smile, MessageCircle, CheckSquare, User, BarChart3, Star, Brain, HeartPulse } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from './logo';
 import { useState } from 'react';
@@ -14,6 +14,10 @@ const navItems = [
   { href: '/mood', icon: Smile, label: 'Mood' },
   { href: '/chat', icon: MessageCircle, label: 'Chat' },
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
+  { href: '/journal', icon: Brain, label: 'Journal' },
+  { href: '/analysis', icon: BarChart3, label: 'Analysis' },
+  { href: '/calm', icon: HeartPulse, label: 'Calm' },
+  { href: '/badges', icon: Star, label: 'Badges' },
   { href: '/profile/settings', icon: User, label: 'Profile' },
 ];
 
@@ -66,10 +70,11 @@ export function Header() {
                       href={item.href}
                       onClick={() => setIsOpen(false)}
                       className={cn(
-                        'text-lg font-medium transition-colors hover:text-foreground/80',
-                         pathname === item.href ? 'text-foreground' : 'text-foreground/60'
+                        'flex items-center gap-3 rounded-md p-2 text-lg font-medium transition-colors hover:text-foreground/80',
+                         pathname === item.href ? 'text-foreground bg-accent' : 'text-foreground/60'
                       )}
                     >
+                      <item.icon className="h-5 w-5" />
                       {item.label}
                     </Link>
                   ))}
