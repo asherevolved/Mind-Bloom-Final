@@ -25,10 +25,11 @@ export default function SignupPage() {
     setIsLoading(true);
 
     // Step 1: Sign up the user
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: { user: signedUpUser }, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        emailRedirectTo: `https://google.com/search?q=email-confirmed`,
         data: {
           full_name: name,
         },
@@ -41,8 +42,14 @@ export default function SignupPage() {
       return;
     }
 
+    if (!signedUpUser) {
+      toast({ variant: 'destructive', title: 'Signup Error', description: 'Could not create user. A confirmation email has been sent.' });
+      setIsLoading(false);
+      return;
+    }
+
     // Step 2: Immediately sign in the user to create a session
-    const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
+    const { data: { user: loggedInUser }, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
     });
@@ -53,7 +60,20 @@ export default function SignupPage() {
         return;
     }
 
-    if (user) {
+    if (loggedInUser) {
+      // Step 3: Create the user profile in the public `users` table
+      const { error: profileError } = await supabase.from('users').insert({
+          auth_uid: loggedInUser.id,
+          email: loggedInUser.email,
+          name: name,
+      });
+
+      if (profileError) {
+          toast({ variant: 'destructive', title: 'Profile Creation Failed', description: profileError.message });
+          setIsLoading(false);
+          return;
+      }
+      
       toast({ title: 'Account Created!', description: 'Welcome to Mind Bloom.' });
       router.push('/onboarding');
     } else {
