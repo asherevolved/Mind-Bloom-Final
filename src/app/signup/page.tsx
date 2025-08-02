@@ -39,17 +39,14 @@ export default function SignupPage() {
       setIsLoading(false);
       return;
     }
-
-    // The user object can be null if email confirmation is required but the user object is needed to insert into the users table.
-    // We will handle profile creation via a trigger in Supabase itself for reliability.
-    // For now, we assume the user object is available after sign up for redirection.
+    
+    // Since we are not requiring email confirmation, the user object should be available.
+    // A profile will be created via a Supabase trigger.
     if (user) {
-      toast({ title: 'Success!', description: 'Please check your email to verify your account.' });
+      toast({ title: 'Account Created!', description: 'Welcome to Mind Bloom.' });
       router.push('/onboarding');
-    } else if (!error) {
-       toast({ title: 'Success!', description: 'Please check your email to verify your account.' });
-       // Redirect to a page that tells them to check their email.
-       router.push('/');
+    } else {
+      toast({ variant: 'destructive', title: 'Signup Error', description: 'Could not create user. Please try again.' });
     }
     
     setIsLoading(false);
