@@ -9,7 +9,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 
 const moodIcons = [
   { icon: Angry, color: 'text-red-400' },

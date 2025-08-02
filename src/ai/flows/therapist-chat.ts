@@ -33,7 +33,7 @@ const prompt = ai.definePrompt({
   name: 'therapistChatPrompt',
   input: {schema: TherapistChatInputSchema},
   output: {schema: TherapistChatOutputSchema},
-  prompt: `You are an AI therapist providing mental health support and guidance. Respond to the user message with empathy and understanding.
+  prompt: `You are an AI therapist providing mental health support and guidance. Your name is Bloom. Respond to the user message with empathy, understanding, and occasional insights. Keep your responses concise and conversational.
 
 Chat History:
 {{#each chatHistory}}
@@ -42,7 +42,7 @@ Chat History:
 
 User Message: {{{message}}}
 
-Therapist:`, // the Handlebar ifEquals helper is used here to check the role in the chat history messages
+Therapist:`,
   helpers: {
     ifEquals: function(arg1: any, arg2: any, options: any) {
       return (arg1 == arg2) ? options.fn(this) : options.inverse(this);

@@ -1,9 +1,30 @@
+'use client'
+
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Ear, Waves, Wind } from 'lucide-react';
+import { Ear, Waves, Wind, Shuffle } from 'lucide-react';
+import { useState } from 'react';
+
+const sounds = [
+    { name: 'Ocean Waves', icon: Waves },
+    { name: 'Gentle Wind', icon: Wind },
+    { name: 'White Noise', icon: Ear },
+]
 
 export default function CalmPage() {
+  const [activeSound, setActiveSound] = useState<string | null>(null);
+
+  const playSound = (soundName: string) => {
+    // In a real app, you would use an audio library to play sounds.
+    // For this prototype, we'll just track the active state.
+    if (activeSound === soundName) {
+      setActiveSound(null); // Toggle off
+    } else {
+      setActiveSound(soundName);
+    }
+  };
+
   return (
     <MainAppLayout>
       <div className="p-4 sm:p-6 lg:p-8">
@@ -21,7 +42,7 @@ export default function CalmPage() {
             <CardContent className="flex flex-col items-center justify-center gap-4 text-center">
               <div className="relative flex h-48 w-48 items-center justify-center">
                 <div className="absolute h-full w-full animate-box-breathing rounded-full bg-primary/20"></div>
-                <p className="z-10 text-lg font-semibold text-primary-foreground animate-pulse">Breathe</p>
+                <p className="z-10 text-lg font-semibold text-primary animate-pulse">Breathe</p>
               </div>
               <p className="text-muted-foreground">
                 Inhale for 4s, Hold for 4s, Exhale for 4s, Hold for 4s.
@@ -49,19 +70,19 @@ export default function CalmPage() {
               <CardDescription>Listen to calming sounds.</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-4">
-              <Button variant="outline" className="h-20 flex-col gap-2">
-                <Waves />
-                <span>Ocean Waves</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2">
-                <Wind />
-                <span>Gentle Wind</span>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2">
-                <Ear />
-                <span>White Noise</span>
-              </Button>
+              {sounds.map(sound => (
+                <Button 
+                    key={sound.name}
+                    variant={activeSound === sound.name ? 'default' : 'outline'} 
+                    className="h-20 flex-col gap-2"
+                    onClick={() => playSound(sound.name)}
+                >
+                    <sound.icon />
+                    <span>{sound.name}</span>
+                </Button>
+              ))}
               <Button variant="secondary" className="h-20 flex-col gap-2">
+                 <Shuffle />
                 <span>Surprise Me</span>
               </Button>
             </CardContent>

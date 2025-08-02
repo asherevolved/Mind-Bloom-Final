@@ -2,12 +2,14 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Lightbulb, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+
 
 const myTasks = [
   { id: 'task1', text: 'Go for a 15-minute walk', category: 'Mental', done: true },
@@ -24,6 +26,14 @@ const suggestedTasks = [
 ];
 
 export default function TasksPage() {
+    const { toast } = useToast();
+
+    const handleAddTask = () => {
+        toast({
+            title: "Task Added!",
+            description: "The suggested task has been added to your list.",
+        })
+    }
   return (
     <MainAppLayout>
       <div className="p-4 sm:p-6 lg:p-8">
@@ -83,7 +93,7 @@ export default function TasksPage() {
                     <CardDescription>{task.description}</CardDescription>
                   </CardHeader>
                   <CardContent className="mt-auto">
-                    <Button className="w-full"><Plus className="mr-2 h-4 w-4" /> Add to My Tasks</Button>
+                    <Button className="w-full" onClick={handleAddTask}><Plus className="mr-2 h-4 w-4" /> Add to My Tasks</Button>
                   </CardContent>
                 </Card>
               ))}

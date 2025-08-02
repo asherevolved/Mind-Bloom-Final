@@ -8,8 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Bell, Download, Trash2, Moon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 export default function SettingsPage() {
+  const isGuest = false; // This would be dynamic state
+
   return (
     <MainAppLayout>
       <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
@@ -19,6 +22,18 @@ export default function SettingsPage() {
         </header>
 
         <div className="space-y-8">
+          {isGuest && (
+            <Card className="bg-primary/10 border-primary/50">
+              <CardHeader>
+                <CardTitle>You are in Guest Mode</CardTitle>
+                <CardDescription>Sign up to save your progress and unlock all features.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button className="w-full">Upgrade to a Full Account</Button>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Personal Information</CardTitle>
@@ -33,13 +48,13 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="name">Display Name</Label>
-                <Input id="name" defaultValue="Explorer" />
+                <Input id="name" defaultValue="Explorer" disabled={isGuest} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" type="email" defaultValue="user@example.com" disabled />
               </div>
-              <Button>Save Changes</Button>
+              <Button disabled={isGuest}>Save Changes</Button>
             </CardContent>
           </Card>
 
@@ -75,10 +90,10 @@ export default function SettingsPage() {
                <CardDescription>These actions are permanent and cannot be undone.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-               <Button variant="outline" className="w-full justify-start text-left">
+               <Button variant="outline" className="w-full justify-start text-left" disabled={isGuest}>
                   <Download className="mr-2 h-4 w-4" /> Download My Data
                 </Button>
-               <Button variant="destructive" className="w-full justify-start text-left">
+               <Button variant="destructive" className="w-full justify-start text-left" disabled={isGuest}>
                   <Trash2 className="mr-2 h-4 w-4" /> Delete Account
                 </Button>
             </CardContent>
