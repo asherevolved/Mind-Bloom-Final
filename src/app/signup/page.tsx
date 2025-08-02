@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -39,22 +40,18 @@ export default function SignupPage() {
       return;
     }
 
+    // The user object can be null if email confirmation is required but the user object is needed to insert into the users table.
+    // We will handle profile creation via a trigger in Supabase itself for reliability.
+    // For now, we assume the user object is available after sign up for redirection.
     if (user) {
-      const { error: insertError } = await supabase.from('users').insert({
-        auth_uid: user.id,
-        email: user.email,
-        name: name,
-      });
-
-      if (insertError) {
-        toast({ variant: 'destructive', title: 'Error creating profile', description: insertError.message });
-        setIsLoading(false);
-        return;
-      }
-      
       toast({ title: 'Success!', description: 'Please check your email to verify your account.' });
       router.push('/onboarding');
+    } else if (!error) {
+       toast({ title: 'Success!', description: 'Please check your email to verify your account.' });
+       // Redirect to a page that tells them to check their email.
+       router.push('/');
     }
+    
     setIsLoading(false);
   };
 

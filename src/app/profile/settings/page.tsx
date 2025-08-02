@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -19,8 +20,14 @@ type Preferences = {
     notification_frequency: string;
 };
 
+type UserProfile = {
+  id: string;
+  email?: string;
+  name?: string;
+};
+
 export default function SettingsPage() {
-  const [user, setUser] = useState<{ id: string; email?: string; user_metadata: { full_name?: string } } | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [preferences, setPreferences] = useState<Preferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
@@ -33,17 +40,25 @@ export default function SettingsPage() {
           const { data: { session } } = await supabase.auth.getSession();
           
           if (session?.user) {
-              setUser(session.user);
-              const { data: prefs, error } = await supabase
-                  .from('preferences')
-                  .select('dark_mode, notification_frequency')
-                  .eq('user_id', session.user.id)
-                  .single();
+              const { data: profile, error: profileError } = await supabase
+                .from('users')
+                .select('id, email, name')
+                .eq('auth_uid', session.user.id)
+                .single();
 
-              if (error && error.code !== 'PGRST116') { // Ignore 'no rows found'
-                  toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch preferences.' });
-              } else {
-                  setPreferences(prefs || { dark_mode: false, notification_frequency: 'daily' });
+              if (profile) {
+                  setUser(profile);
+                  const { data: prefs, error: prefsError } = await supabase
+                      .from('preferences')
+                      .select('dark_mode, notification_frequency')
+                      .eq('user_id', profile.id)
+                      .single();
+
+                  if (prefsError && prefsError.code !== 'PGRST116') { // Ignore 'no rows found'
+                      toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch preferences.' });
+                  } else {
+                      setPreferences(prefs || { dark_mode: false, notification_frequency: 'daily' });
+                  }
               }
           } else {
             const guest = sessionStorage.getItem('isGuest') === 'true';
@@ -101,7 +116,7 @@ export default function SettingsPage() {
                 <h1 className="font-headline text-3xl font-bold text-foreground">Profile & Settings</h1>
                 <p className="text-muted-foreground">Manage your account and preferences.</p>
             </div>
-            <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2"/>Logout</Button>
+            {!isGuest && <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2"/>Logout</Button>}
         </header>
 
         <div className="space-y-8">
@@ -125,17 +140,17 @@ export default function SettingsPage() {
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
                   <AvatarImage src="https://placehold.co/100x100.png" data-ai-hint="profile avatar" />
-                  <AvatarFallback>{user?.user_metadata.full_name?.[0] || 'U'}</AvatarFallback>
+                  <AvatarFallback>{user?.name?.[0] || 'G'}</AvatarFallback>
                 </Avatar>
                 <Button variant="outline" disabled>Change Photo</Button>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="name">Display Name</Label>
-                <Input id="name" defaultValue={user?.user_metadata.full_name || 'User'} disabled={isGuest} />
+                <Input id="name" defaultValue={user?.name || 'Guest'} disabled={isGuest} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" defaultValue={user?.email} disabled />
+                <Input id="email" type="email" defaultValue={user?.email || 'guest@example.com'} disabled />
               </div>
               <Button disabled={isGuest}>Save Changes</Button>
             </CardContent>
