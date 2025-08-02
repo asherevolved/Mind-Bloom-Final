@@ -4,31 +4,31 @@
 
 @layer base {
   :root {
-    --background: 240 5% 96%;
+    --background: 240 10% 97%; /* Light Grey */
     --foreground: 240 5% 20%;
     --card: 0 0% 100%;
     --card-foreground: 240 5% 20%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 5% 20%;
-    --primary: 259 100% 87%;
-    --primary-foreground: 259 100% 15%;
+    --primary: 261 100% 87%; /* Soft Lavender */
+    --primary-foreground: 261 100% 15%;
     --secondary: 240 5% 90%;
     --secondary-foreground: 240 5% 10%;
     --muted: 240 5% 90%;
     --muted-foreground: 240 4% 45%;
-    --accent: 196 100% 81%;
-    --accent-foreground: 196 100% 15%;
+    --accent: 195 77% 81%; /* Pale Turquoise */
+    --accent-foreground: 195 77% 15%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 6% 85%;
     --input: 240 6% 85%;
     --ring: 259 100% 70%;
-    --radius: 0.5rem;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --radius: 0.8rem; /* Increased for a softer feel */
+    --chart-1: 261 80% 70%;
+    --chart-2: 195 70% 75%;
+    --chart-3: 30 80% 70%;
+    --chart-4: 120 40% 70%;
+    --chart-5: 0 80% 80%;
   }
 
   .dark {
@@ -38,24 +38,24 @@
     --card-foreground: 0 0% 98%;
     --popover: 240 5% 10%;
     --popover-foreground: 0 0% 98%;
-    --primary: 259 80% 70%;
+    --primary: 261 80% 70%; /* Soft Lavender */
     --primary-foreground: 0 0% 98%;
     --secondary: 240 4% 20%;
     --secondary-foreground: 0 0% 98%;
     --muted: 240 4% 20%;
     --muted-foreground: 0 0% 63%;
-    --accent: 196 80% 60%;
+    --accent: 195 80% 60%; /* Pale Turquoise */
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 4% 25%;
     --input: 240 4% 25%;
     --ring: 259 80% 60%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --chart-1: 261 70% 60%;
+    --chart-2: 195 60% 55%;
+    --chart-3: 30 70% 60%;
+    --chart-4: 120 50% 60%;
+    --chart-5: 0 70% 70%;
   }
 }
 
@@ -65,5 +65,39 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .font-headline {
+    font-family: 'Playfair Display', serif;
+  }
+  .font-body {
+    font-family: 'PT Sans', sans-serif;
+  }
+}
+
+@layer utilities {
+  @keyframes box-breathing {
+    0%, 100% {
+      transform: scale(0.9);
+      opacity: 0.8;
+    }
+    25% { /* Inhale */
+      transform: scale(1.1);
+      opacity: 1;
+    }
+    50% { /* Hold */
+      transform: scale(1.1);
+      opacity: 1;
+    }
+    75% { /* Exhale */
+      transform: scale(0.9);
+      opacity: 0.8;
+    }
+  }
+
+  .animate-box-breathing {
+    animation: box-breathing 8s ease-in-out infinite;
   }
 }
