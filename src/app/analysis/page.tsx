@@ -4,7 +4,7 @@ import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Lightbulb, BarChart3,ClipboardCheck, ArrowRight, MessageSquareQuote } from 'lucide-react';
+import { Lightbulb, BarChart3,ClipboardCheck, ArrowRight, MessageSquareQuote, Trophy } from 'lucide-react';
 import Link from 'next/link';
 
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
