@@ -1,14 +1,25 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Bot, Mic, MicOff, Send, PhoneOff, User } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import Link from 'next/link';
 import { therapistChat, TherapistChatInput } from '@/ai/flows/therapist-chat';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 type Message = {
   role: 'user' | 'assistant';
@@ -23,6 +34,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -31,12 +43,13 @@ export default function ChatPage() {
   const handleSend = async () => {
     if (input.trim()) {
       const newUserMessage: Message = { role: 'user', content: input };
-      setMessages(prev => [...prev, newUserMessage]);
+      const newMessages = [...messages, newUserMessage];
+      setMessages(newMessages);
       setInput('');
       setIsLoading(true);
 
       try {
-        const chatHistory = messages.slice(-5); // Use last 5 messages for context
+        const chatHistory = newMessages.slice(-10); // Use last 10 messages for context
         const response = await therapistChat({ message: input, chatHistory });
         const aiMessage: Message = { role: 'assistant', content: response.response };
         setMessages(prev => [...prev, aiMessage]);
@@ -68,10 +81,20 @@ export default function ChatPage() {
         }, 1500)
     }
   };
+  
+  const handleEndSession = () => {
+    const transcript = messages
+      .slice(-10)
+      .map(msg => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`)
+      .join('\n');
+    
+    sessionStorage.setItem('chatTranscript', transcript);
+    router.push('/analysis');
+  };
 
   return (
     <MainAppLayout>
-      <div className="flex h-[calc(100vh-80px)] flex-col">
+      <div className="flex h-[calc(100vh-57px)] flex-col">
         <header className="flex items-center justify-between border-b p-4">
           <div className="flex items-center gap-3">
             <Avatar>
@@ -82,11 +105,25 @@ export default function ChatPage() {
               <p className="text-xs text-green-500">Online</p>
             </div>
           </div>
-          <Link href="/analysis" passHref>
-            <Button variant="destructive" size="sm">
-              <PhoneOff className="mr-2 h-4 w-4" /> End Session
-            </Button>
-          </Link>
+           <AlertDialog>
+              <AlertDialogTrigger asChild>
+                 <Button variant="destructive" size="sm">
+                  <PhoneOff className="mr-2 h-4 w-4" /> End Session
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>End your session?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will end the current chat session and take you to the analysis page.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Continue Chat</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleEndSession}>End Session & Analyze</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -108,7 +145,7 @@ export default function ChatPage() {
                   msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'
                 }`}
               >
-                <p>{msg.content}</p>
+                <p className="whitespace-pre-wrap">{msg.content}</p>
               </div>
                {msg.role === 'user' && (
                 <Avatar className="h-8 w-8">
@@ -130,7 +167,7 @@ export default function ChatPage() {
            <div ref={messagesEndRef} />
         </main>
 
-        <footer className="border-t p-4">
+        <footer className="border-t p-4 bg-background">
           <div className="flex items-center gap-2">
             <Input
               type="text"

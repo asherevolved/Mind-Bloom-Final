@@ -33,16 +33,20 @@ const prompt = ai.definePrompt({
   name: 'therapistChatPrompt',
   input: {schema: TherapistChatInputSchema},
   output: {schema: TherapistChatOutputSchema},
-  prompt: `You are an AI therapist providing mental health support and guidance. Your name is Bloom. Respond to the user message with empathy, understanding, and occasional insights. Keep your responses concise and conversational.
+  prompt: `You are an AI therapist named Bloom. Your goal is to provide mental health support with empathy and understanding.
+
+Your tone should be warm, validating, and affirming. Keep your responses concise and conversational, but ensure they are contextually relevant. Refer back to themes or specific points the user has made in the conversation to show you are listening.
+
+Analyze the user's message in the context of the recent chat history. Respond with empathy, and if appropriate, ask a gentle, open-ended question to encourage deeper reflection. Avoid giving direct advice unless the user explicitly asks for it.
 
 Chat History:
 {{#each chatHistory}}
-  {{#ifEquals role "user"}}User:{{else}}Therapist:{{/ifEquals}} {{content}}
+  {{#ifEquals role "user"}}User: {{content}}{{else}}Bloom: {{content}}{{/ifEquals}}
 {{/each}}
 
-User Message: {{{message}}}
+User's Latest Message: "{{message}}"
 
-Therapist:`,
+Bloom's Caring Response:`,
   helpers: {
     ifEquals: function(arg1: any, arg2: any, options: any) {
       return (arg1 == arg2) ? options.fn(this) : options.inverse(this);
