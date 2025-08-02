@@ -24,7 +24,8 @@ export default function SignupPage() {
     e.preventDefault();
     setIsLoading(true);
 
-    const { data: { user }, error } = await supabase.auth.signUp({
+    // Step 1: Sign up the user
+    const { error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -34,19 +35,29 @@ export default function SignupPage() {
       },
     });
 
-    if (error) {
-      toast({ variant: 'destructive', title: 'Signup Failed', description: error.message });
+    if (signUpError) {
+      toast({ variant: 'destructive', title: 'Signup Failed', description: signUpError.message });
       setIsLoading(false);
       return;
     }
+
+    // Step 2: Immediately sign in the user to create a session
+    const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
     
-    // Since we are not requiring email confirmation, the user object should be available.
-    // A profile will be created via a Supabase trigger.
+    if (signInError) {
+        toast({ variant: 'destructive', title: 'Login after signup failed', description: signInError.message });
+        setIsLoading(false);
+        return;
+    }
+
     if (user) {
       toast({ title: 'Account Created!', description: 'Welcome to Mind Bloom.' });
       router.push('/onboarding');
     } else {
-      toast({ variant: 'destructive', title: 'Signup Error', description: 'Could not create user. Please try again.' });
+      toast({ variant: 'destructive', title: 'Signup Error', description: 'Could not log you in after creating account. Please try logging in manually.' });
     }
     
     setIsLoading(false);
@@ -67,15 +78,15 @@ export default function SignupPage() {
             <form onSubmit={handleSignup} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Name</Label>
-                <Input id="name" type="text" placeholder="Your Name" value={name} onChange={(e) => setName(e.target.value)} disabled={isLoading}/>
+                <Input id="name" type="text" placeholder="Your Name" value={name} onChange={(e) => setName(e.target.value)} disabled={isLoading} required/>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading}/>
+                <Input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isLoading} required/>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading}/>
+                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading} required/>
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? 'Creating Account...' : 'Create Account'}
