@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -8,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Logo } from '@/components/logo';
-import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Hand, Heart, Brain, Zap, Check } from 'lucide-react';
+import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Hand, Heart, Brain, Zap, Check, Trophy } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
@@ -33,9 +34,9 @@ const supportOptions = [
 ];
 
 const therapyPersonalities = [
-  { id: 'listener', title: 'Reflective Listener', description: 'Empathetic and understanding, helps you explore your thoughts.' },
-  { id: 'coach', title: 'Motivational Coach', description: 'Energetic and encouraging, pushes you towards your goals.' },
-  { id: 'solver', title: 'Practical Solver', description: 'Action-oriented, provides concrete steps and strategies.' },
+  { id: 'Reflective Listener', title: 'Reflective Listener', description: 'Empathetic and understanding, helps you explore your thoughts.' },
+  { id: 'Motivational Coach', title: 'Motivational Coach', description: 'Energetic and encouraging, pushes you towards your goals.' },
+  { id: 'Practical Solver', title: 'Practical Solver', description: 'Action-oriented, provides concrete steps and strategies.' },
 ];
 
 export default function OnboardingPage() {
@@ -44,7 +45,7 @@ export default function OnboardingPage() {
   const [sleepQuality, setSleepQuality] = useState<string | null>(null);
   const [supportTags, setSupportTags] = useState<string[]>([]);
   const [therapyTone, setTherapyTone] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   
   const router = useRouter();
@@ -58,7 +59,7 @@ export default function OnboardingPage() {
       if (!guest) {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          setUserId(session.user.id);
+          setAuthUserId(session.user.id);
         } else {
           router.push('/');
         }
@@ -79,6 +80,30 @@ export default function OnboardingPage() {
     );
   };
   
+  const awardBadge = async (userId: string, code: string, name: string) => {
+    const { data } = await supabase
+        .from('badges')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('badge_code', code)
+        .single();
+    
+    if (!data) { // if badge doesn't exist
+        const { error: insertError } = await supabase.from('badges').insert({
+            user_id: userId,
+            badge_code: code,
+            badge_name: name,
+        });
+        if (!insertError) {
+            toast({
+                title: 'Badge Unlocked!',
+                description: `You've earned the "${name}" badge!`,
+                action: <Trophy className="h-5 w-5 text-yellow-500" />
+            });
+        }
+    }
+  }
+
   const handleFinish = async () => {
     if (isGuest) {
         sessionStorage.setItem('onboardingComplete', 'true');
@@ -86,14 +111,29 @@ export default function OnboardingPage() {
         return;
     }
 
-    if (!userId) {
+    if (!authUserId) {
         toast({variant: 'destructive', title: 'Error', description: 'User not found. Please log in again.'});
         router.push('/');
         return;
     }
+    
+    // 1. Get the internal user ID from the `users` table
+    const { data: userProfile, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_uid', authUserId)
+        .single();
 
+    if (userError || !userProfile) {
+        toast({variant: 'destructive', title: 'Profile Error', description: 'Could not find your user profile. Please try again.'});
+        return;
+    }
+
+    const internalUserId = userProfile.id;
+
+    // 2. Save onboarding data
     const { error: onboardingError } = await supabase.from('onboarding').upsert({
-        user_id: userId,
+        user_id: internalUserId,
         mood_baseline_score: mood[0],
         sleep_quality_emoji: sleepQuality,
         support_tags: supportTags,
@@ -105,8 +145,9 @@ export default function OnboardingPage() {
         return;
     }
 
+    // 3. Save preferences
     const { error: prefsError } = await supabase.from('preferences').upsert({
-        user_id: userId,
+        user_id: internalUserId,
         therapy_tone: therapyTone,
     }, { onConflict: 'user_id' });
     
@@ -115,17 +156,8 @@ export default function OnboardingPage() {
         return;
     }
 
-    const { data: badgeData, error: badgeError } = await supabase.from('badges').insert({
-        user_id: userId,
-        badge_code: 'welcome_explorer',
-        badge_name: 'Welcome Explorer',
-    });
-
-    if (badgeError) {
-        toast({variant: 'destructive', title: 'Badge Error', description: `Failed to award badge: ${badgeError.message}`});
-    } else {
-        toast({title: 'Badge Unlocked!', description: 'You earned the "Welcome Explorer" badge!'});
-    }
+    // 4. Award welcome badge
+    await awardBadge(internalUserId, 'welcome_explorer', 'Welcome Explorer');
 
     router.push('/dashboard');
   };
@@ -185,7 +217,7 @@ export default function OnboardingPage() {
                 <CardContent className="space-y-4">
                   {supportOptions.map((option) => (
                     <div key={option.id} className="flex items-center space-x-3 rounded-md border p-4 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
-                      <Checkbox id={option.id} onCheckedChange={() => handleSupportTagChange(option.id)} checked={supportTags.includes(option.id)} />
+                      <Checkbox id={option.id} onCheckedChange={() => handleSupportTagChange(option.label)} checked={supportTags.includes(option.label)} />
                       <label htmlFor={option.id} className="flex items-center gap-3 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                         <option.icon className="h-6 w-6 text-primary" />
                         {option.label}
@@ -206,15 +238,15 @@ export default function OnboardingPage() {
                   {therapyPersonalities.map((p) => (
                      <Card 
                       key={p.id} 
-                      onClick={() => setTherapyTone(p.id)} 
-                      className={cn("cursor-pointer transition-all hover:shadow-md", therapyTone === p.id && "border-primary ring-2 ring-primary")}
+                      onClick={() => setTherapyTone(p.title)} 
+                      className={cn("cursor-pointer transition-all hover:shadow-md", therapyTone === p.title && "border-primary ring-2 ring-primary")}
                     >
                        <CardContent className="p-4 flex items-center justify-between">
                          <div>
                           <h3 className="font-bold">{p.title}</h3>
                           <p className="text-sm text-muted-foreground">{p.description}</p>
                          </div>
-                         {therapyTone === p.id && <Check className="h-5 w-5 text-primary" />}
+                         {therapyTone === p.title && <Check className="h-5 w-5 text-primary" />}
                        </CardContent>
                      </Card>
                   ))}
