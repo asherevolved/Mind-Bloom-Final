@@ -57,7 +57,7 @@ export default function SettingsPage() {
                   if (prefsError && prefsError.code !== 'PGRST116') { // Ignore 'no rows found'
                       toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch preferences.' });
                   } else {
-                      setPreferences(prefs || { dark_mode: false, notification_frequency: 'daily' });
+                      setPreferences(prefs || { dark_mode: true, notification_frequency: 'daily' });
                   }
               }
           } else {
@@ -72,7 +72,7 @@ export default function SettingsPage() {
   const handleUpdatePreferences = async (newPrefs: Partial<Preferences>) => {
       if (!user || !preferences) return;
       
-      const updatedPrefs = { ...preferences, ...newPrefs };
+      const updatedPrefs = { ...preferences, ...newPrefs, dark_mode: true };
       setPreferences(updatedPrefs);
 
       const { error } = await supabase
@@ -165,13 +165,12 @@ export default function SettingsPage() {
                 <div className="space-y-0.5">
                   <Label className="flex items-center gap-2"><Moon/> Dark Mode</Label>
                   <p className="text-xs text-muted-foreground">
-                    Enable a darker theme for the app.
+                    Enjoy the dark theme.
                   </p>
                 </div>
                 <Switch 
-                    checked={preferences?.dark_mode} 
-                    onCheckedChange={(checked) => handleUpdatePreferences({ dark_mode: checked })}
-                    disabled={isGuest}
+                    checked={true}
+                    disabled={true}
                 />
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
