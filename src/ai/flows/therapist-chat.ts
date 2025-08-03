@@ -50,8 +50,8 @@ User's Latest Message: "{{message}}"
 
 Bloom's Caring Response (as a {{therapyTone}}):`,
   helpers: {
-    ifEquals: function(arg1: any, arg2: any, options: any) {
-      return (arg1 == arg2) ? options.fn(this) : options.inverse(this);
+    ifEquals: (arg1: any, arg2: any, options: any) => {
+      return (arg1 === arg2) ? options.fn(this) : options.inverse(this);
     }
   }
 });

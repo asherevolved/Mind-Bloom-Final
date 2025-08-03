@@ -23,7 +23,7 @@ export default function CrisisPage() {
                 <Phone className="mr-4 h-6 w-6" /> Call 988 Crisis Line
               </Button>
             </a>
-             <a href="https://www.google.com/maps/search/?api=1&query=mental+health+support+near+me" target="_blank" rel="noopener noreferrer" className="block">
+             <a href="https://www.google.com/maps/search/therapists+near+me" target="_blank" rel="noopener noreferrer" className="block">
               <Button className="w-full h-16 text-lg" variant="outline">
                 <MapPin className="mr-4 h-6 w-6" /> Find Help Near Me
               </Button>
