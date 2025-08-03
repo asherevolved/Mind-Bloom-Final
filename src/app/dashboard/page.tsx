@@ -1,14 +1,13 @@
 
-'use client';
-
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { cookies } from 'next/headers';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 
 type DashboardData = {
     name: string;
@@ -21,69 +20,73 @@ type DashboardData = {
     aiTip: string;
 };
 
-export default function DashboardPage() {
-    const [data, setData] = useState<DashboardData | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+async function getDashboardData(): Promise<DashboardData> {
+    const cookieStore = cookies();
+    const supabaseServer = createServerComponentClient({ cookies: () => cookieStore });
+    
+    const { data: { session } } = await supabaseServer.auth.getSession();
+    
+    if (session?.user) {
+        const { data: userProfile } = await supabaseServer.from('users').select('id, name').eq('auth_uid', session.user.id).single();
+        if (!userProfile) { 
+             return {
+                name: "Guest",
+                moodLogged: false,
+                tasksLeft: 0,
+                totalTasks: 0,
+                badgesUnlocked: 0,
+                lastJournalEntry: null,
+                habitStreaks: [],
+                aiTip: "Welcome! Explore the app to start your wellness journey."
+            };
+        }
 
-    useEffect(() => {
-        const fetchData = async () => {
-            setIsLoading(true);
-            const { data: { session } } = await supabase.auth.getSession();
-            
-            if (session?.user) {
-                const { data: userProfile } = await supabase.from('users').select('id, name').eq('auth_uid', session.user.id).single();
-                if (!userProfile) { setIsLoading(false); return; }
+        const userId = userProfile.id;
+        
+        // Parallel fetching
+        const [mood, tasks, badges, journal, habits, onboarding] = await Promise.all([
+            supabaseServer.from('mood_logs').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('created_at', new Date().toISOString().slice(0, 10)),
+            supabaseServer.from('tasks').select('is_completed', { count: 'exact' }).eq('user_id', userId),
+            supabaseServer.from('badges').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+            supabaseServer.from('journal').select('entry').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).single(),
+            supabaseServer.from('habits').select('title, streak_count').eq('user_id', userId).order('streak_count', { ascending: false }).limit(2),
+            supabaseServer.from('onboarding').select('support_tags').eq('user_id', userId).single(),
+        ]);
 
-                const userId = userProfile.id;
-                
-                // Parallel fetching
-                const [mood, tasks, badges, journal, habits, onboarding] = await Promise.all([
-                    supabase.from('mood_logs').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('created_at', new Date().toISOString().slice(0, 10)),
-                    supabase.from('tasks').select('is_completed', { count: 'exact' }).eq('user_id', userId),
-                    supabase.from('badges').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-                    supabase.from('journal').select('entry').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).single(),
-                    supabase.from('habits').select('title, streak_count').eq('user_id', userId).order('streak_count', { ascending: false }).limit(2),
-                    supabase.from('onboarding').select('support_tags').eq('user_id', userId).single(),
-                ]);
+        const tasksLeft = tasks.data ? tasks.data.filter(t => !t.is_completed).length : 0;
+        const totalTasks = tasks.count || 0;
+        const aiTip = onboarding.data?.support_tags?.includes('Anxiety') 
+            ? "Feeling anxious? Try a 5-minute grounding exercise from the Calm page."
+            : "Taking a few deep breaths can be a powerful anchor. Try a 2-minute box breathing exercise now.";
 
-                const tasksLeft = tasks.data ? tasks.data.filter(t => !t.is_completed).length : 0;
-                const totalTasks = tasks.count || 0;
-                const aiTip = onboarding.data?.support_tags?.includes('Anxiety') 
-                    ? "Feeling anxious? Try a 5-minute grounding exercise from the Calm page."
-                    : "Taking a few deep breaths can be a powerful anchor. Try a 2-minute box breathing exercise now.";
-
-                setData({
-                    name: userProfile.name || "Explorer",
-                    moodLogged: (mood.count || 0) > 0,
-                    tasksLeft,
-                    totalTasks,
-                    badgesUnlocked: badges.count || 0,
-                    lastJournalEntry: journal.data?.entry || null,
-                    habitStreaks: habits.data?.map(h => ({ name: h.title, streak: h.streak_count })) || [],
-                    aiTip,
-                });
-
-            } else {
-                setData({
-                    name: "Guest",
-                    moodLogged: false,
-                    tasksLeft: 0,
-                    totalTasks: 0,
-                    badgesUnlocked: 0,
-                    lastJournalEntry: null,
-                    habitStreaks: [],
-                    aiTip: "Welcome! Explore the app to start your wellness journey."
-                });
-            }
-            setIsLoading(false);
+        return {
+            name: userProfile.name || "Explorer",
+            moodLogged: (mood.count || 0) > 0,
+            tasksLeft,
+            totalTasks,
+            badgesUnlocked: badges.count || 0,
+            lastJournalEntry: journal.data?.entry || null,
+            habitStreaks: habits.data?.map(h => ({ name: h.title, streak: h.streak_count })) || [],
+            aiTip,
         };
-        fetchData();
-    }, []);
 
-  if (isLoading || !data) {
-    // A simple loading state. Can be replaced with skeletons.
-    return <MainAppLayout><div className="p-8 text-center">Loading your dashboard...</div></MainAppLayout>
-  }
+    } else {
+        return {
+            name: "Guest",
+            moodLogged: false,
+            tasksLeft: 0,
+            totalTasks: 0,
+            badgesUnlocked: 0,
+            lastJournalEntry: null,
+            habitStreaks: [],
+            aiTip: "Welcome! Explore the app to start your wellness journey."
+        };
+    }
+}
+
+
+export default async function DashboardPage() {
+  const data = await getDashboardData();
 
   return (
     <MainAppLayout>
@@ -192,3 +195,5 @@ export default function DashboardPage() {
     </MainAppLayout>
   );
 }
+
+    
