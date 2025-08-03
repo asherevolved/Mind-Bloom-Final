@@ -117,16 +117,31 @@ export default function OnboardingPage() {
         return;
     }
     
-    // 1. Get the internal user ID from the `users` table
-    const { data: userProfile, error: userError } = await supabase
+    // 1. Get the internal user ID from the `users` table, or create it if it doesn't exist
+    let { data: userProfile, error: userError } = await supabase
         .from('users')
         .select('id')
         .eq('auth_uid', authUserId)
         .single();
-
-    if (userError || !userProfile) {
-        toast({variant: 'destructive', title: 'Profile Error', description: 'Could not find your user profile. Please try again.'});
+    
+    if (userError && userError.code !== 'PGRST116') { // PGRST116 is 'No rows found'
+        toast({variant: 'destructive', title: 'Database Error', description: 'Could not query user profile.'});
         return;
+    }
+
+    if (!userProfile) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data: newProfile, error: createError } = await supabase
+            .from('users')
+            .insert({ auth_uid: authUserId, name: user?.user_metadata.full_name || 'New User', email: user?.email })
+            .select('id')
+            .single();
+
+        if (createError || !newProfile) {
+            toast({variant: 'destructive', title: 'Profile Creation Error', description: 'Could not create your user profile. Please try again.'});
+            return;
+        }
+        userProfile = newProfile;
     }
 
     const internalUserId = userProfile.id;

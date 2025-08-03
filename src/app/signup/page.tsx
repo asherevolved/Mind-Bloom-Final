@@ -24,48 +24,34 @@ export default function SignupPage() {
     e.preventDefault();
     setIsLoading(true);
 
-    // Step 1: Sign up the user in Supabase Auth
-    const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // We can pass the user's name in the metadata to use when creating the profile
         data: {
           full_name: name,
         },
       },
     });
 
-    if (signUpError) {
-      toast({ variant: 'destructive', title: 'Signup Failed', description: signUpError.message });
+    if (error) {
+      toast({ variant: 'destructive', title: 'Signup Failed', description: error.message });
       setIsLoading(false);
       return;
     }
 
-    if (!user) {
-      // This case handles when a user already exists but is unconfirmed.
-      toast({ variant: 'destructive', title: 'Signup Error', description: 'Could not create user. If you already have an account, please log in. A confirmation email has been sent.' });
+    if (!data.session) {
+       toast({
+        title: 'Confirm your email',
+        description:
+          'We sent a confirmation link to your email. Please click it to finish signing up.',
+      });
       setIsLoading(false);
       return;
-    }
-    
-    // Step 2: Create the user profile in the public `users` table
-    // This runs after the auth user is successfully created.
-    const { error: profileError } = await supabase.from('users').insert({
-        auth_uid: user.id, // This links our public profile to the auth user
-        email: user.email,
-        name: name,
-    });
-
-    if (profileError) {
-        toast({ variant: 'destructive', title: 'Profile Creation Failed', description: `An account was created, but we failed to create your profile. Please contact support. Error: ${profileError.message}` });
-        // Optional: you might want to log out the user here if profile creation is critical
-        await supabase.auth.signOut();
-        setIsLoading(false);
-        return;
     }
       
-    // If both auth user and public profile are created, redirect to onboarding
+    // If signup is successful and a session is returned, go to onboarding.
+    // The profile will be created there.
     toast({ title: 'Account Created!', description: 'Welcome to Mind Bloom. Let\'s get you set up.' });
     router.push('/onboarding');
     
