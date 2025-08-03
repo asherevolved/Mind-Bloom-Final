@@ -35,16 +35,29 @@ export default function LoginPage() {
     }
 
     if (user) {
-      const { data: onboardingData, error: onboardingError } = await supabase
-        .from('onboarding')
-        .select('completed')
-        .eq('user_id', user.id)
+      // After login, we need to check our public users table to get the internal ID
+      const { data: userProfile } = await supabase
+        .from('users')
+        .select('id')
+        .eq('auth_uid', user.id)
         .single();
-      
-      if (onboardingData?.completed) {
-        router.push('/dashboard');
+
+      if (userProfile) {
+         const { data: onboardingData } = await supabase
+            .from('onboarding')
+            .select('completed')
+            .eq('user_id', userProfile.id)
+            .single();
+
+        if (onboardingData?.completed) {
+            router.push('/dashboard');
+        } else {
+            router.push('/onboarding');
+        }
       } else {
-        router.push('/onboarding');
+         // This case might happen if profile creation failed during signup.
+         // Send them to onboarding to be safe.
+         router.push('/onboarding');
       }
     }
     setIsLoading(false);
@@ -52,8 +65,6 @@ export default function LoginPage() {
   
   const handleGuestLogin = async () => {
     setIsLoading(true);
-    // In a real app, you might create an anonymous user or handle guest state differently
-    // For this prototype, we'll just redirect to onboarding.
     sessionStorage.setItem('isGuest', 'true');
     router.push('/onboarding');
     setIsLoading(false);
