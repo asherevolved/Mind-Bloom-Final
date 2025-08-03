@@ -35,7 +35,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [therapyTone, setTherapyTone] = useState<string | undefined>(undefined);
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -45,7 +45,7 @@ export default function ChatPage() {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        setUserId(session.user.id);
+        setAuthUserId(session.user.id);
         const { data: profile } = await supabase.from('users').select('id').eq('auth_uid', session.user.id).single();
         if (profile) {
             const { data: prefs } = await supabase.from('preferences').select('therapy_tone').eq('user_id', profile.id).single();
@@ -119,13 +119,16 @@ export default function ChatPage() {
       return;
     }
     
-    const { data: { session } } = await supabase.auth.getSession();
-    const currentUserId = session?.user?.id;
+    if (authUserId) {
+        const {data: userProfile} = await supabase.from('users').select('id').eq('auth_uid', authUserId).single();
+        if (!userProfile) {
+             toast({ variant: 'destructive', title: 'Error Saving Session', description: "Could not find your user profile to save the session." });
+            return;
+        }
 
-    if (currentUserId) {
        const { data, error } = await supabase
         .from('therapy_sessions')
-        .insert({ user_id: currentUserId, session_data: { messages } })
+        .insert({ user_id: userProfile.id, session_data: { messages } })
         .select('id')
         .single();
 
