@@ -36,6 +36,7 @@ export default function ChatPage() {
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [therapyTone, setTherapyTone] = useState<string | undefined>(undefined);
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -43,13 +44,19 @@ export default function ChatPage() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+      if (session?.user) {
         setUserId(session.user.id);
+        const { data: profile } = await supabase.from('users').select('id').eq('auth_uid', session.user.id).single();
+        if (profile) {
+            const { data: prefs } = await supabase.from('preferences').select('therapy_tone').eq('user_id', profile.id).single();
+            setTherapyTone(prefs?.therapy_tone || 'Reflective Listener');
+        }
       } else {
         const isGuest = sessionStorage.getItem('isGuest') === 'true';
         if (!isGuest) {
             router.push('/');
         }
+        setTherapyTone('Reflective Listener'); // Default for guests
       }
     };
     checkUser();
@@ -69,7 +76,7 @@ export default function ChatPage() {
 
       try {
         const chatHistory = newMessages.slice(-10);
-        const response = await therapistChat({ message: input, chatHistory });
+        const response = await therapistChat({ message: input, chatHistory, therapyTone });
         
         let audioUrl: string | undefined = undefined;
         if(isVoiceMode) {

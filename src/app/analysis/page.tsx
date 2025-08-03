@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -8,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Lightbulb, BarChart3, ClipboardCheck, ArrowRight, MessageSquareQuote, Bot, Trophy, Plus, ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
-import { analyzeSession, AnalyzeSessionOutput } from '@/ai/flows/session-analysis';
+import { analyzeSession, AnalyzeSessionOutput, AnalyzeSessionInput } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabaseClient';
@@ -20,15 +21,34 @@ export default function AnalysisPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [userId, setUserId] = useState<string | null>(null);
+  const [hasAwardedBadge, setHasAwardedBadge] = useState(false);
 
   useEffect(() => {
     const processSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      const currentUserId = session?.user.id;
-      setUserId(currentUserId || null);
+      const currentUserId = session?.user?.id;
+      if(currentUserId) {
+        const {data: userProfile} = await supabase.from('users').select('id').eq('auth_uid', currentUserId).single();
+        setUserId(userProfile?.id || null);
+      }
+      
 
       const sessionId = sessionStorage.getItem('sessionId');
       let transcript = '';
+      let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
+
+      if (currentUserId) {
+        const {data: userProfile} = await supabase.from('users').select('id').eq('auth_uid', currentUserId).single();
+        if(userProfile) {
+            const { data: onbData } = await supabase.from('onboarding').select('*').eq('user_id', userProfile.id).single();
+            const { data: prefsData } = await supabase.from('preferences').select('therapy_tone').eq('user_id', userProfile.id).single();
+            onboardingData = {
+                moodBaseline: onbData?.mood_baseline_score,
+                supportTags: onbData?.support_tags,
+                therapyTone: prefsData?.therapy_tone
+            };
+        }
+      }
 
       if (sessionId && currentUserId) {
         const { data: sessionData, error: sessionError } = await supabase
@@ -61,19 +81,19 @@ export default function AnalysisPage() {
       }
 
       try {
-        const result = await analyzeSession({ transcript });
+        const result = await analyzeSession({ transcript, onboardingData });
         setAnalysis(result);
 
-        if (currentUserId && sessionId) {
+        if (userId && sessionId) {
           const { error: analysisError } = await supabase.from('analysis').insert({
-            user_id: currentUserId,
+            user_id: userId,
             session_id: sessionId,
             summary: result.emotionalSummary.summaryText,
             emotional_insights: result.insights,
             advice_steps: result.suggestedSteps
           });
           if (analysisError) throw analysisError;
-          await awardBadge('self_reflector', 'Self-Reflector', currentUserId);
+          await awardBadge('self_reflector', 'Self-Reflector', userId);
         }
 
       } catch (err) {
@@ -88,10 +108,10 @@ export default function AnalysisPage() {
     };
 
     processSession();
-  }, []);
+  }, [userId]);
 
   const awardBadge = async (code: string, name: string, currentUserId: string) => {
-    const { data, error } = await supabase
+    const { data } = await supabase
         .from('badges')
         .select('id')
         .eq('user_id', currentUserId)
@@ -105,6 +125,7 @@ export default function AnalysisPage() {
             badge_name: name,
         });
         if (!insertError) {
+            setHasAwardedBadge(true);
             toast({
                 title: 'Badge Unlocked!',
                 description: `You've earned the "${name}" badge!`,
@@ -261,7 +282,7 @@ export default function AnalysisPage() {
                 </CardContent>
              </Card>
 
-             {!isLoading && analysis && (
+             {hasAwardedBadge && (
                 <div className="flex justify-center">
                     <Badge variant="outline" className="p-2 px-4 text-sm animate-in fade-in duration-500">
                         <Trophy className="h-4 w-4 mr-2 text-yellow-500"/> You've unlocked the "Self-Reflector" badge!
