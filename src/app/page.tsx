@@ -35,30 +35,45 @@ export default function LoginPage() {
     }
 
     if (user) {
-      // After login, we need to check our public users table to get the internal ID
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_uid', user.id)
-        .single();
-
-      if (userProfile) {
-         const { data: onboardingData } = await supabase
-            .from('onboarding')
-            .select('completed')
-            .eq('user_id', userProfile.id)
+        // After login, we need to check our public users table to get the internal ID
+        let { data: userProfile, error: profileError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('auth_uid', user.id)
             .single();
 
-        if (onboardingData?.completed) {
-            router.push('/dashboard');
-        } else {
-            router.push('/onboarding');
+        // If profile does not exist, create it. This makes the system more robust.
+        if (!userProfile) {
+            const { data: newUserProfile, error: createProfileError } = await supabase
+                .from('users')
+                .insert({ auth_uid: user.id, email: user.email, name: user.email?.split('@')[0] || 'New User' })
+                .select('id')
+                .single();
+            
+            if (createProfileError) {
+                 toast({ variant: 'destructive', title: 'Profile Error', description: `Failed to create user profile: ${createProfileError.message}`});
+                 setIsLoading(false);
+                 return;
+            }
+            userProfile = newUserProfile;
         }
-      } else {
-         // This case might happen if profile creation failed during signup.
-         // Send them to onboarding to be safe.
-         router.push('/onboarding');
-      }
+
+        if (userProfile) {
+            const { data: onboardingData } = await supabase
+                .from('onboarding')
+                .select('completed')
+                .eq('user_id', userProfile.id)
+                .single();
+
+            if (onboardingData?.completed) {
+                router.push('/dashboard');
+            } else {
+                router.push('/onboarding');
+            }
+        } else {
+            // This case should be rare now, but good to handle.
+            toast({ variant: 'destructive', title: 'Profile Error', description: 'Could not find or create your user profile. Please try again.' });
+        }
     }
     setIsLoading(false);
   };
