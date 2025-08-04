@@ -45,7 +45,7 @@ const therapyPersonalities = [
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [mood, setMood] = useState([5]);
-  const [sleepQuality, setSleepQuality] =useState <string | null>(null);
+  const [sleepQuality, setSleepQuality] = useState<string | null>(null);
   const [supportTags, setSupportTags] = useState<string[]>([]);
   const [therapyTone, setTherapyTone] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);

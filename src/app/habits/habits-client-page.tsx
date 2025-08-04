@@ -76,7 +76,7 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
       const habit = habits.find(h => h.id === habitId);
       if (!habit || (habit.last_completed && isToday(new Date(habit.last_completed)))) return;
 
-      const newStreak = (habit.last_completed && isToday(subDays(new Date(habit.last_completed), -1))) 
+      const newStreak = (habit.last_completed && isToday(subDays(new Date(), 1))) 
           ? (habit.streak_count || 0) + 1 
           : 1;
 
@@ -187,5 +187,3 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
       </div>
   );
 }
-
-    

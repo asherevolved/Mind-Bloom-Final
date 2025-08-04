@@ -181,5 +181,4 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
       </div>
   );
 }
-
     

@@ -62,5 +62,4 @@ export default async function JournalPage() {
     </MainAppLayout>
   );
 }
-
     

@@ -84,5 +84,4 @@ export default async function HabitsPage() {
     </MainAppLayout>
   );
 }
-
     

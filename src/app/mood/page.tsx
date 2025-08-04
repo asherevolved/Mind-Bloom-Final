@@ -63,5 +63,4 @@ export default async function MoodPage() {
     </MainAppLayout>
   );
 }
-
     
