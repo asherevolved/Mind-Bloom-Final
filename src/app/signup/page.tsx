@@ -31,18 +31,22 @@ export default function SignupPage() {
       const user = userCredential.user;
 
       if (user) {
-        // Update Firebase Auth profile
+        // Update Firebase Auth profile and create user document in Firestore
         await updateProfile(user, { displayName: name });
-
-        // Create user document in Firestore
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, {
-          uid: user.uid,
-          name,
-          email,
-          createdAt: new Date(),
-          onboardingComplete: false,
-        });
+        try {
+            const userDocRef = doc(db, 'users', user.uid);
+            await setDoc(userDocRef, {
+              uid: user.uid,
+              name,
+              email,
+              createdAt: new Date(),
+              onboardingComplete: false,
+            });
+        } catch (dbError: any) {
+            toast({ variant: 'destructive', title: 'Database Error', description: `User created, but failed to save profile: ${dbError.message}` });
+            setIsLoading(false);
+            return;
+        }
         
         toast({ title: 'Account Created!', description: "Welcome! Let's get you set up." });
         router.push('/onboarding');
