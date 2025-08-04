@@ -12,7 +12,7 @@ if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     // You might need to add your database URL here
-    // databaseURL: `https://<YOUR_PROJECT_ID>.firebaseio.com`
+    databaseURL: `https://mind-bloom-vdm4y.firebaseio.com`
   });
 }
 
