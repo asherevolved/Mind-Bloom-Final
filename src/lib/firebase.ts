@@ -6,6 +6,7 @@ import { getFirestore } from 'firebase/firestore';
 const firebaseConfig = {
   apiKey: "AIzaSyD5lES72nwynLNFdaYog6lxVxrw_Lm72pI",
   authDomain: "mind-bloom-vdm4y.firebaseapp.com",
+  databaseURL: "https://mind-bloom-vdm4y.firebaseio.com",
   projectId: "mind-bloom-vdm4y",
   storageBucket: "mind-bloom-vdm4y.firebasestorage.app",
   messagingSenderId: "387530632714",
