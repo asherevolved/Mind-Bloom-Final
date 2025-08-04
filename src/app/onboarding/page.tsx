@@ -114,7 +114,6 @@ export default function OnboardingPage() {
     try {
         const userDocRef = doc(db, 'users', user.uid);
         
-        // Ensure there's a name to save, especially for Google sign-ups
         const userDoc = await getDoc(userDocRef);
         const existingName = userDoc.exists() ? userDoc.data().name : '';
 
@@ -190,7 +189,7 @@ export default function OnboardingPage() {
                 <CardHeader>
                   <CardTitle className="font-headline text-center">What do you want to work on?</CardTitle>
                   <CardDescription className="text-center">Select your main areas of focus.</CardDescription>
-                </Header>
+                </CardHeader>
                 <CardContent className="space-y-4">
                   {supportOptions.map((option) => (
                     <div key={option.id} className="flex items-center space-x-3 rounded-md border p-4 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
