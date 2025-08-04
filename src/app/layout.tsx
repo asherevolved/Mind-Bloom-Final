@@ -1,7 +1,21 @@
 import type { Metadata } from 'next';
+import { Playfair_Display, PT_Sans } from 'next/font/google';
 import { cn } from '@/lib/utils';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
+
+const playfairDisplay = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-headline',
+  display: 'swap',
+});
+
+const ptSans = PT_Sans({
+  subsets: ['latin'],
+  weight: ['400', '700'],
+  variable: '--font-body',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'Mind Bloom',
@@ -14,12 +28,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=PT+Sans:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet" />
-      </head>
+    <html lang="en" className={cn("dark", playfairDisplay.variable, ptSans.variable)} suppressHydrationWarning>
+      <head />
       <body className={cn('min-h-screen bg-background font-body antialiased')}>
         {children}
         <Toaster />
