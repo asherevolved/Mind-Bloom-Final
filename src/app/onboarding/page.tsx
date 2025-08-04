@@ -14,7 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db } from '@/lib/firebase';
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
 
@@ -122,7 +122,6 @@ export default function OnboardingPage() {
             onboardingComplete: true
         };
         
-        // Use set with merge option true to create or update the document
         await setDoc(userDocRef, onboardingData, { merge: true });
 
         await awardBadge(userId, 'welcome_explorer', 'Welcome Explorer');
@@ -184,7 +183,7 @@ export default function OnboardingPage() {
                 <CardHeader>
                   <CardTitle className="font-headline text-center">What do you want to work on?</CardTitle>
                   <CardDescription className="text-center">Select your main areas of focus.</CardDescription>
-                </Header>
+                </CardHeader>
                 <CardContent className="space-y-4">
                   {supportOptions.map((option) => (
                     <div key={option.id} className="flex items-center space-x-3 rounded-md border p-4 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">

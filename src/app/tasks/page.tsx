@@ -4,7 +4,7 @@ import { MainAppLayout } from '@/components/main-app-layout';
 import { TasksClientPage } from './tasks-client-page';
 import { cookies } from 'next/headers';
 import { auth, db } from '@/lib/firebase-admin';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 
 
 export type Task = {
