@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 
 const totalSteps = 4;
@@ -48,7 +48,7 @@ export default function OnboardingPage() {
   const [sleepQuality, setSleepQuality] = useState<string | null>(null);
   const [supportTags, setSupportTags] = useState<string[]>([]);
   const [therapyTone, setTherapyTone] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   
   const router = useRouter();
@@ -58,9 +58,9 @@ export default function OnboardingPage() {
     const guest = sessionStorage.getItem('isGuest') === 'true';
     setIsGuest(guest);
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserId(user.uid);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
       } else if (!guest) {
         router.push('/');
       }
@@ -105,26 +105,33 @@ export default function OnboardingPage() {
         return;
     }
 
-    if (!userId) {
+    if (!user) {
         toast({variant: 'destructive', title: 'Error', description: 'User not found. Please log in again.'});
         router.push('/');
         return;
     }
     
     try {
-        const userDocRef = doc(db, 'users', userId);
+        const userDocRef = doc(db, 'users', user.uid);
         
+        // Ensure there's a name to save, especially for Google sign-ups
+        const userDoc = await getDoc(userDocRef);
+        const existingName = userDoc.exists() ? userDoc.data().name : '';
+
         const onboardingData = {
+            name: existingName || user.displayName || user.email?.split('@')[0],
+            email: user.email,
             moodBaseline: mood[0],
             sleepQuality: sleepQuality,
             supportTags: supportTags,
             therapyTone: therapyTone,
-            onboardingComplete: true
+            onboardingComplete: true,
+            createdAt: serverTimestamp(),
         };
         
         await setDoc(userDocRef, onboardingData, { merge: true });
 
-        await awardBadge(userId, 'welcome_explorer', 'Welcome Explorer');
+        await awardBadge(user.uid, 'welcome_explorer', 'Welcome Explorer');
 
         router.push('/dashboard');
     } catch (error: any) {
@@ -183,7 +190,7 @@ export default function OnboardingPage() {
                 <CardHeader>
                   <CardTitle className="font-headline text-center">What do you want to work on?</CardTitle>
                   <CardDescription className="text-center">Select your main areas of focus.</CardDescription>
-                </CardHeader>
+                </Header>
                 <CardContent className="space-y-4">
                   {supportOptions.map((option) => (
                     <div key={option.id} className="flex items-center space-x-3 rounded-md border p-4 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
