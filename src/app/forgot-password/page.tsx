@@ -3,14 +3,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabaseClient';
+import { auth } from '@/lib/firebase';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { ArrowLeft } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
@@ -23,17 +23,15 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `https://google.com/search?q=password-reset-confirmed`,
-    });
-
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
+    try {
+      await sendPasswordResetEmail(auth, email);
       toast({ title: 'Check your email', description: 'A password reset link has been sent to your email address.' });
       setIsSubmitted(true);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   return (

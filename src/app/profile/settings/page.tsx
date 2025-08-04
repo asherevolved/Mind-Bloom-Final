@@ -12,18 +12,21 @@ import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Bell, Download, Trash2, Moon, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabaseClient';
+import { auth, db } from '@/lib/firebase';
+import { onAuthStateChanged, signOut, updateProfile } from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 
 type Preferences = {
-    dark_mode: boolean;
-    notification_frequency: string;
+    darkMode: boolean;
+    notificationFrequency: string;
 };
 
 type UserProfile = {
-  id: string;
+  uid: string;
   email?: string;
   name?: string;
+  photoURL?: string;
 };
 
 export default function SettingsPage() {
@@ -31,66 +34,72 @@ export default function SettingsPage() {
   const [preferences, setPreferences] = useState<Preferences | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
+  const [name, setName] = useState('');
   const { toast } = useToast();
   const router = useRouter();
 
   useEffect(() => {
-      const fetchUserData = async () => {
-          setIsLoading(true);
-          const { data: { session } } = await supabase.auth.getSession();
-          
-          if (session?.user) {
-              const { data: profile, error: profileError } = await supabase
-                .from('users')
-                .select('id, email, name')
-                .eq('auth_uid', session.user.id)
-                .single();
+      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+          if (currentUser) {
+              setIsGuest(false);
+              const userDocRef = doc(db, 'users', currentUser.uid);
+              const userDoc = await getDoc(userDocRef);
 
-              if (profile) {
-                  setUser(profile);
-                  const { data: prefs, error: prefsError } = await supabase
-                      .from('preferences')
-                      .select('dark_mode, notification_frequency')
-                      .eq('user_id', profile.id)
-                      .single();
-
-                  if (prefsError && prefsError.code !== 'PGRST116') { // Ignore 'no rows found'
-                      toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch preferences.' });
-                  } else {
-                      setPreferences(prefs || { dark_mode: true, notification_frequency: 'daily' });
-                  }
+              if (userDoc.exists()) {
+                  const userData = userDoc.data();
+                  setUser({
+                      uid: currentUser.uid,
+                      email: currentUser.email || '',
+                      name: userData.name || currentUser.displayName || '',
+                      photoURL: currentUser.photoURL || '',
+                  });
+                  setName(userData.name || currentUser.displayName || '');
+                  setPreferences({
+                      darkMode: userData.darkMode ?? true,
+                      notificationFrequency: userData.notificationFrequency ?? 'daily',
+                  });
               }
           } else {
-            const guest = sessionStorage.getItem('isGuest') === 'true';
-            setIsGuest(guest);
+              const guest = sessionStorage.getItem('isGuest') === 'true';
+              setIsGuest(guest);
+              if (guest) {
+                setUser({ uid: 'guest', name: 'Guest', email: 'guest@example.com' });
+                setName('Guest');
+              }
           }
           setIsLoading(false);
-      };
-      fetchUserData();
-  }, [toast]);
+      });
+      return () => unsubscribe();
+  }, []);
+
+  const handleUpdateProfile = async () => {
+    if (!user || isGuest || !auth.currentUser) return;
+    try {
+        await updateProfile(auth.currentUser, { displayName: name });
+        await updateDoc(doc(db, 'users', user.uid), { name });
+        toast({ title: 'Profile Updated!' });
+    } catch(error: any) {
+        toast({ variant: 'destructive', title: 'Update failed', description: error.message});
+    }
+  }
 
   const handleUpdatePreferences = async (newPrefs: Partial<Preferences>) => {
-      if (!user || !preferences) return;
+      if (!user || !preferences || isGuest) return;
       
-      const updatedPrefs = { ...preferences, ...newPrefs, dark_mode: true };
+      const updatedPrefs = { ...preferences, ...newPrefs, darkMode: true };
       setPreferences(updatedPrefs);
 
-      const { error } = await supabase
-          .from('preferences')
-          .update(updatedPrefs)
-          .eq('user_id', user.id);
-      
-      if (error) {
+      try {
+        await updateDoc(doc(db, 'users', user.uid), updatedPrefs);
+        toast({ title: 'Preferences Saved!' });
+      } catch (error: any) {
           toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
-          // Revert optimistic update
-          setPreferences(preferences);
-      } else {
-          toast({ title: 'Preferences Saved!' });
+          setPreferences(preferences); // Revert
       }
   };
   
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut(auth);
     sessionStorage.clear();
     router.push('/');
   }
@@ -120,7 +129,7 @@ export default function SettingsPage() {
         </header>
 
         <div className="space-y-8">
-          {isGuest && !user && (
+          {isGuest && (
             <Card className="bg-primary/10 border-primary/50">
               <CardHeader>
                 <CardTitle>You are in Guest Mode</CardTitle>
@@ -139,20 +148,20 @@ export default function SettingsPage() {
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarImage src="https://placehold.co/100x100.png" data-ai-hint="profile avatar" />
+                  <AvatarImage src={user?.photoURL || "https://placehold.co/100x100.png"} data-ai-hint="profile avatar" />
                   <AvatarFallback>{user?.name?.[0] || 'G'}</AvatarFallback>
                 </Avatar>
                 <Button variant="outline" disabled>Change Photo</Button>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="name">Display Name</Label>
-                <Input id="name" defaultValue={user?.name || 'Guest'} disabled={isGuest} />
+                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} disabled={isGuest} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" defaultValue={user?.email || 'guest@example.com'} disabled />
+                <Input id="email" type="email" value={user?.email || 'guest@example.com'} disabled />
               </div>
-              <Button disabled={isGuest}>Save Changes</Button>
+              <Button onClick={handleUpdateProfile} disabled={isGuest}>Save Changes</Button>
             </CardContent>
           </Card>
 

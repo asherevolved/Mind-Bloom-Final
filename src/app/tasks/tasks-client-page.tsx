@@ -10,10 +10,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Lightbulb, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabaseClient';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 import type { Task, SuggestedTask } from './page';
+import { db } from '@/lib/firebase';
+import { addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
@@ -33,18 +34,24 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
         if (!userId || !newTaskText.trim()) return;
         setIsLoading(true);
 
-        const { data, error } = await supabase.from('tasks').insert({
-            user_id: userId,
-            title: newTaskText,
-            category: 'Manual',
-        }).select().single();
-
-        if (error) {
-            toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
-        } else if (data) {
-            setTasks([...tasks, data]);
+        try {
+            const docRef = await addDoc(collection(db, 'users', userId, 'tasks'), {
+                title: newTaskText,
+                category: 'Manual',
+                is_completed: false,
+                createdAt: serverTimestamp(),
+            });
+            const newTask = {
+                id: docRef.id,
+                title: newTaskText,
+                category: 'Manual',
+                is_completed: false
+            };
+            setTasks([...tasks, newTask]);
             setNewTaskText('');
             router.refresh();
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
         setIsLoading(false);
     };
@@ -54,41 +61,40 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
             toast({ title: 'Task Added!', description: `(Guest) "${task.title}" has been added to your list.` });
             return;
         }
-
-        const optimisticTask: Task = {
-            id: `optimistic-${Date.now()}`,
-            title: task.title,
-            category: task.category,
-            is_completed: false,
-        };
-        setTasks([...tasks, optimisticTask]);
-
-        const { data, error } = await supabase.from('tasks').insert({
-            user_id: userId,
-            title: task.title,
-            category: task.category,
-        }).select().single();
-
-        if (error) {
-            toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
-            setTasks(tasks => tasks.filter(t => t.id !== optimisticTask.id)); // Revert
-        } else if (data) {
+        
+        try {
+            const docRef = await addDoc(collection(db, 'users', userId, 'tasks'), {
+                title: task.title,
+                category: task.category,
+                is_completed: false,
+                createdAt: serverTimestamp(),
+            });
+            const newTask = {
+                id: docRef.id,
+                title: task.title,
+                category: task.category,
+                is_completed: false,
+            };
+            setTasks([...tasks, newTask]);
             toast({ title: "Task Added!", description: `"${task.title}" has been added to your list.` });
-            router.refresh(); // Refresh to get the real data from the server
+            router.refresh();
+        } catch(error: any) {
+            toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
     };
 
     const handleToggleTask = async (taskId: string, isCompleted: boolean) => {
+        const originalTasks = [...tasks];
         setTasks(tasks.map(t => t.id === taskId ? { ...t, is_completed: isCompleted } : t));
         if (!userId) return;
 
-        const { error } = await supabase.from('tasks').update({ is_completed: isCompleted }).eq('id', taskId);
-        if (error) {
-            // Revert optimistic update
-             setTasks(tasks.map(t => t.id === taskId ? { ...t, is_completed: !isCompleted } : t));
-             toast({ variant: 'destructive', title: 'Error updating task' });
-        } else {
+        try {
+            const taskRef = doc(db, 'users', userId, 'tasks', taskId);
+            await updateDoc(taskRef, { is_completed: isCompleted });
             router.refresh();
+        } catch(error) {
+             setTasks(originalTasks);
+             toast({ variant: 'destructive', title: 'Error updating task' });
         }
     };
 
@@ -97,12 +103,12 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
         setTasks(tasks.filter(t => t.id !== taskId));
         if (!userId) return;
 
-        const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-        if (error) {
+        try {
+            await deleteDoc(doc(db, 'users', userId, 'tasks', taskId));
+            router.refresh();
+        } catch (error) {
             setTasks(originalTasks);
             toast({ variant: 'destructive', title: 'Error deleting task' });
-        } else {
-            router.refresh();
         }
     };
     
@@ -196,5 +202,3 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
       </div>
   );
 }
-
-    

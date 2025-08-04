@@ -1,8 +1,11 @@
 
+
 import { MainAppLayout } from '@/components/main-app-layout';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
 import { TasksClientPage } from './tasks-client-page';
+import { cookies } from 'next/headers';
+import { auth, db } from '@/lib/firebase-admin';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+
 
 export type Task = {
   id: string;
@@ -18,49 +21,59 @@ export type SuggestedTask = {
     category: string;
 }
 
-async function getTasks(): Promise<Task[]> {
-    const cookieStore = cookies();
-    const supabaseServer = createServerComponentClient({ cookies: () => cookieStore });
+async function getTasks(userId: string): Promise<Task[]> {
+    if (!userId) return [];
 
-    const { data: { session } } = await supabaseServer.auth.getSession();
-    if (!session) return [];
-
-    const { data, error } = await supabaseServer
-        .from('tasks')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: true });
-    
-    if (error) {
-        console.error("Error fetching tasks", error);
+    try {
+        const tasksRef = collection(db, 'users', userId, 'tasks');
+        const q = query(tasksRef, orderBy('createdAt', 'asc'));
+        const tasksSnapshot = await getDocs(q);
+        return tasksSnapshot.docs.map(doc => ({
+            id: doc.id,
+            title: doc.data().title,
+            category: doc.data().category,
+            is_completed: doc.data().is_completed,
+        }));
+    } catch(error) {
+        console.error("Error fetching tasks from Firestore:", error);
         return [];
     }
-    return data || [];
 };
 
 async function getSuggestedTasks(): Promise<SuggestedTask[]> {
-    const cookieStore = cookies();
-    const supabaseServer = createServerComponentClient({ cookies: () => cookieStore });
-    const { data, error } = await supabaseServer.from('suggested_tasks').select('*').limit(3);
-     if (error) {
-        console.error("Error fetching suggested tasks", error);
-        return [];
-    }
-    return data || [];
+    // This is a placeholder. In a real app, you might have a global collection of suggestions.
+    // For now, returning a static list.
+    return [
+        { id: 'suggest-1', title: '5-Minute Meditation', description: 'Clear your mind and find focus.', category: 'Mindfulness' },
+        { id: 'suggest-2', title: 'Go for a Short Walk', description: 'Get some fresh air and move your body.', category: 'Exercise' },
+        { id: 'suggest-3', title: 'Write Down 3 Things You\'re Grateful For', description: 'Cultivate a positive mindset.', category: 'Gratitude' },
+    ];
 }
 
 export default async function TasksPage() {
-    const [tasks, suggestedTasks] = await Promise.all([getTasks(), getSuggestedTasks()]);
-    const cookieStore = cookies();
-    const supabaseServer = createServerComponentClient({ cookies: () => cookieStore });
-    const { data: { session } } = await supabaseServer.auth.getSession();
+    let userId: string | null = null;
+    let tasks: Task[] = [];
+    
+    try {
+        const cookieStore = cookies();
+        const idToken = cookieStore.get('idToken')?.value;
+        if (idToken) {
+            const decodedToken = await auth.verifyIdToken(idToken);
+            userId = decodedToken.uid;
+            tasks = await getTasks(userId);
+        }
+    } catch (error) {
+        console.log("Could not authenticate user on server", error);
+    }
+    
+    const suggestedTasks = await getSuggestedTasks();
 
   return (
     <MainAppLayout>
         <TasksClientPage 
             initialTasks={tasks}
             initialSuggestedTasks={suggestedTasks}
-            userId={session?.user.id || null}
+            userId={userId}
         />
     </MainAppLayout>
   );

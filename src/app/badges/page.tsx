@@ -1,3 +1,4 @@
+
 'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
@@ -6,9 +7,11 @@ import { Award, BookOpen, Check, HandHeart, MessageCircle, Star, Target, ThumbsU
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
+import { auth, db } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { collection, getDocs } from 'firebase/firestore';
 
 const allBadges = [
   { code: 'welcome_explorer', name: 'Welcome Explorer', icon: Star, criteria: 'Complete the onboarding flow' },
@@ -23,36 +26,36 @@ const allBadges = [
   { code: 'conversationalist', name: 'Conversationalist', icon: Bot, criteria: 'Use voice chat for a session' },
 ];
 
-type Badge = typeof allBadges[0] & { unlocked: boolean };
+type BadgeInfo = typeof allBadges[0] & { unlocked: boolean };
 
 export default function BadgesPage() {
-  const [badges, setBadges] = useState<Badge[]>([]);
+  const [badges, setBadges] = useState<BadgeInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    const fetchUserAndBadges = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        if(session) {
-            const { data: unlockedBadges, error } = await supabase
-                .from('badges')
-                .select('badge_code')
-                .eq('user_id', session.user.id);
-            
-            if (error) {
-                toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your badges.' });
-            } else {
-                const unlockedCodes = unlockedBadges.map(b => b.badge_code);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if(user) {
+            try {
+                const badgesSnapshot = await getDocs(collection(db, 'users', user.uid, 'badges'));
+                const unlockedCodes = badgesSnapshot.docs.map(doc => doc.data().badge_code);
+                
                 const badgeStatus = allBadges.map(b => ({
                     ...b,
                     unlocked: unlockedCodes.includes(b.code),
                 }));
                 setBadges(badgeStatus);
+            } catch(error) {
+                 toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your badges.' });
             }
+        } else {
+            // Handle guest user - no badges
+            const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
+            setBadges(badgeStatus);
         }
         setIsLoading(false);
-    }
-    fetchUserAndBadges();
+    });
+    return () => unsubscribe();
   }, [toast]);
   
   const unlockedBadges = badges.filter(b => b.unlocked);
@@ -93,7 +96,7 @@ export default function BadgesPage() {
   );
 }
 
-function BadgeGrid({ badgeList }: { badgeList: Badge[] }) {
+function BadgeGrid({ badgeList }: { badgeList: BadgeInfo[] }) {
   if (badgeList.length === 0) {
     return <p className="text-center text-muted-foreground py-10">No badges in this category.</p>;
   }

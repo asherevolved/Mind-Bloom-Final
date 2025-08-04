@@ -1,4 +1,5 @@
 
+
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { cookies } from 'next/headers';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { auth, db } from '@/lib/firebase-admin';
+import { collection, getDocs, limit, query, where, orderBy } from 'firebase/firestore';
+import { getAiTip } from '@/ai/flows/dashboard-tip';
 
 type DashboardData = {
     name: string;
@@ -19,73 +22,91 @@ type DashboardData = {
     aiTip: string;
 };
 
-async function getDashboardData(): Promise<DashboardData> {
-    const cookieStore = cookies();
-    const supabaseServer = createServerComponentClient({ cookies: () => cookieStore });
+async function getDashboardData(userId: string): Promise<DashboardData> {
+    const userDocRef = db.collection('users').doc(userId);
+    const userDoc = await userDocRef.get();
+    const userData = userDoc.data();
+
+    // Mood
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const moodQuery = query(
+        collection(db, 'users', userId, 'mood_logs'),
+        where('createdAt', '>=', today),
+        limit(1)
+    );
+    const moodSnapshot = await getDocs(moodQuery);
+    const moodLogged = !moodSnapshot.empty;
+
+    // Tasks
+    const tasksQuery = collection(db, 'users', userId, 'tasks');
+    const tasksSnapshot = await getDocs(tasksQuery);
+    const totalTasks = tasksSnapshot.size;
+    const completedTasks = tasksSnapshot.docs.filter(doc => doc.data().is_completed).length;
+    const tasksLeft = totalTasks - completedTasks;
+
+    // Badges
+    const badgesQuery = collection(db, 'users', userId, 'badges');
+    const badgesSnapshot = await getDocs(badgesQuery);
+    const badgesUnlocked = badgesSnapshot.size;
+
+    // Journal
+    const journalQuery = query(collection(db, 'users', userId, 'journal'), orderBy('createdAt', 'desc'), limit(1));
+    const journalSnapshot = await getDocs(journalQuery);
+    const lastJournalEntry = journalSnapshot.empty ? null : journalSnapshot.docs[0].data().entry;
     
-    const { data: { session } } = await supabaseServer.auth.getSession();
+    // Habits
+    const habitsQuery = query(collection(db, 'users', userId, 'habits'), orderBy('streak_count', 'desc'), limit(2));
+    const habitsSnapshot = await getDocs(habitsQuery);
+    const habitStreaks = habitsSnapshot.docs.map(doc => ({ name: doc.data().title, streak: doc.data().streak_count }));
     
-    if (session?.user) {
-        const { data: userProfile } = await supabaseServer.from('users').select('id, name').eq('auth_uid', session.user.id).single();
-        if (!userProfile) { 
-             return {
-                name: "Guest",
-                moodLogged: false,
-                tasksLeft: 0,
-                totalTasks: 0,
-                badgesUnlocked: 0,
-                lastJournalEntry: null,
-                habitStreaks: [],
-                aiTip: "Welcome! Explore the app to start your wellness journey."
-            };
-        }
+    // AI Tip
+    const aiTip = await getAiTip({
+      onboardingGoals: userData?.supportTags || [],
+      recentMood: moodSnapshot.docs[0]?.data().note || 'neutral',
+    });
 
-        const userId = userProfile.id;
-        
-        // Parallel fetching
-        const [mood, tasks, badges, journal, habits, onboarding] = await Promise.all([
-            supabaseServer.from('mood_logs').select('id', { count: 'exact', head: true }).eq('user_id', userId).eq('created_at', new Date().toISOString().slice(0, 10)),
-            supabaseServer.from('tasks').select('is_completed', { count: 'exact' }).eq('user_id', userId),
-            supabaseServer.from('badges').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-            supabaseServer.from('journal').select('entry').eq('user_id', userId).order('created_at', { ascending: false }).limit(1).single(),
-            supabaseServer.from('habits').select('title, streak_count').eq('user_id', userId).order('streak_count', { ascending: false }).limit(2),
-            supabaseServer.from('onboarding').select('support_tags').eq('user_id', userId).single(),
-        ]);
-
-        const tasksLeft = tasks.data ? tasks.data.filter(t => !t.is_completed).length : 0;
-        const totalTasks = tasks.count || 0;
-        const aiTip = onboarding.data?.support_tags?.includes('Anxiety') 
-            ? "Feeling anxious? Try a 5-minute grounding exercise from the Calm page."
-            : "Taking a few deep breaths can be a powerful anchor. Try a 2-minute box breathing exercise now.";
-
-        return {
-            name: userProfile.name || "Explorer",
-            moodLogged: (mood.count || 0) > 0,
-            tasksLeft,
-            totalTasks,
-            badgesUnlocked: badges.count || 0,
-            lastJournalEntry: journal.data?.entry || null,
-            habitStreaks: habits.data?.map(h => ({ name: h.title, streak: h.streak_count })) || [],
-            aiTip,
-        };
-
-    } else {
-        return {
-            name: "Guest",
-            moodLogged: false,
-            tasksLeft: 0,
-            totalTasks: 0,
-            badgesUnlocked: 0,
-            lastJournalEntry: null,
-            habitStreaks: [],
-            aiTip: "Welcome! Explore the app to start your wellness journey."
-        };
-    }
+    return {
+        name: userData?.name || 'Explorer',
+        moodLogged,
+        tasksLeft,
+        totalTasks,
+        badgesUnlocked,
+        lastJournalEntry,
+        habitStreaks,
+        aiTip: aiTip.tip,
+    };
 }
 
 
 export default async function DashboardPage() {
-  const data = await getDashboardData();
+  let userId: string | null = null;
+  const cookieStore = cookies();
+  const idToken = cookieStore.get('idToken')?.value;
+  if (idToken) {
+      try {
+        const decodedToken = await auth.verifyIdToken(idToken);
+        userId = decodedToken.uid;
+      } catch (error) {
+        // Not a valid token, user is not logged in.
+        userId = null
+      }
+  }
+
+  // Handle case where user is not logged in
+  if (!userId) {
+     return (
+        <MainAppLayout>
+          <div className="p-8 text-center">
+            <h1 className="text-2xl font-bold">Welcome to Mind Bloom</h1>
+            <p className="text-muted-foreground mb-4">Please log in to see your dashboard.</p>
+            <Link href="/"><Button>Login</Button></Link>
+          </div>
+        </MainAppLayout>
+      );
+  }
+  
+  const data = await getDashboardData(userId);
 
   return (
     <MainAppLayout>

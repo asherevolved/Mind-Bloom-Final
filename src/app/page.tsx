@@ -10,7 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabaseClient';
+import { auth, db } from '@/lib/firebase';
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -24,59 +26,33 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
 
-    const { data: { user }, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-    if (error) {
-      toast({ variant: 'destructive', title: 'Login Failed', description: error.message });
-      setIsLoading(false);
-      return;
-    }
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
 
-    if (user) {
-        // After login, we need to check our public users table to get the internal ID
-        let { data: userProfile, error: profileError } = await supabase
-            .from('users')
-            .select('id')
-            .eq('auth_uid', user.id)
-            .single();
-
-        // If profile does not exist, create it. This makes the system more robust.
-        if (!userProfile) {
-            const { data: newUserProfile, error: createProfileError } = await supabase
-                .from('users')
-                .insert({ auth_uid: user.id, email: user.email, name: user.email?.split('@')[0] || 'New User' })
-                .select('id')
-                .single();
-            
-            if (createProfileError) {
-                 toast({ variant: 'destructive', title: 'Profile Error', description: `Failed to create user profile: ${createProfileError.message}`});
-                 setIsLoading(false);
-                 return;
-            }
-            userProfile = newUserProfile;
-        }
-
-        if (userProfile) {
-            const { data: onboardingData } = await supabase
-                .from('onboarding')
-                .select('completed')
-                .eq('user_id', userProfile.id)
-                .single();
-
-            if (onboardingData?.completed) {
-                router.push('/dashboard');
-            } else {
-                router.push('/onboarding');
-            }
+        if (userDoc.exists() && userDoc.data().onboardingComplete) {
+          router.push('/dashboard');
         } else {
-            // This case should be rare now, but good to handle.
-            toast({ variant: 'destructive', title: 'Profile Error', description: 'Could not find or create your user profile. Please try again.' });
+          // If profile exists but onboarding is not complete OR profile doesn't exist
+          if (!userDoc.exists()) {
+            await setDoc(userDocRef, {
+              email: user.email,
+              name: user.displayName || email.split('@')[0],
+              createdAt: new Date()
+            });
+          }
+          router.push('/onboarding');
         }
+      }
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Login Failed', description: error.message });
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
   
   const handleGuestLogin = async () => {
@@ -88,14 +64,35 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async () => {
     setIsGoogleLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${location.origin}/auth/callback`,
-      },
-    });
-    if (error) {
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userDocRef);
+
+        if (!userDoc.exists()) {
+          await setDoc(userDocRef, {
+            email: user.email,
+            name: user.displayName,
+            createdAt: new Date(),
+            onboardingComplete: false
+          });
+        }
+        
+        const onboardingComplete = userDoc.exists() ? userDoc.data().onboardingComplete : false;
+        
+        if (onboardingComplete) {
+          router.push('/dashboard');
+        } else {
+          router.push('/onboarding');
+        }
+      }
+    } catch (error: any) {
       toast({ variant: 'destructive', title: 'Google Login Failed', description: error.message });
+    } finally {
       setIsGoogleLoading(false);
     }
   };

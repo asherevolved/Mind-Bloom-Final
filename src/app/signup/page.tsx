@@ -10,7 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabaseClient';
+import { auth, db } from '@/lib/firebase';
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -24,38 +26,32 @@ export default function SignupPage() {
     e.preventDefault();
     setIsLoading(true);
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: name,
-        },
-      },
-    });
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
 
-    if (error) {
+      if (user) {
+        // Update Firebase Auth profile
+        await updateProfile(user, { displayName: name });
+
+        // Create user document in Firestore
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(userDocRef, {
+          uid: user.uid,
+          name,
+          email,
+          createdAt: new Date(),
+          onboardingComplete: false,
+        });
+        
+        toast({ title: 'Account Created!', description: "Welcome! Let's get you set up." });
+        router.push('/onboarding');
+      }
+    } catch (error: any) {
       toast({ variant: 'destructive', title: 'Signup Failed', description: error.message });
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    if (!data.session) {
-       toast({
-        title: 'Confirm your email',
-        description:
-          'We sent a confirmation link to your email. Please click it to finish signing up.',
-      });
-      setIsLoading(false);
-      return;
-    }
-      
-    // If signup is successful and a session is returned, go to onboarding.
-    // The profile will be created there.
-    toast({ title: 'Account Created!', description: 'Welcome to Mind Bloom. Let\'s get you set up.' });
-    router.push('/onboarding');
-    
-    setIsLoading(false);
   };
 
   return (

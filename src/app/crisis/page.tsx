@@ -1,10 +1,51 @@
+
+'use client';
+
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { HeartPulse, MapPin, Phone } from 'lucide-react';
+import { HeartPulse, MapPin, Phone, Trophy } from 'lucide-react';
 import Link from 'next/link';
+import { useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, db } from '@/lib/firebase';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+
 
 export default function CrisisPage() {
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        awardBadge(user.uid);
+      }
+    });
+
+    const awardBadge = async (userId: string) => {
+        const badgeCode = 'help_seeker';
+        const badgeRef = doc(db, 'users', userId, 'badges', badgeCode);
+        const badgeDoc = await getDoc(badgeRef);
+
+        if (!badgeDoc.exists()) {
+            await setDoc(badgeRef, {
+                badge_code: badgeCode,
+                badge_name: 'Help Seeker',
+                unlockedAt: serverTimestamp(),
+            });
+            toast({
+                title: 'Badge Unlocked!',
+                description: `You've earned the "Help Seeker" badge. It's okay to ask for help.`,
+                action: <Trophy className="h-5 w-5 text-yellow-500" />
+            });
+        }
+    };
+
+    return () => unsubscribe();
+  }, [toast]);
+
+
   return (
     <MainAppLayout>
       <div className="flex h-[calc(100vh-80px)] flex-col items-center justify-center bg-background p-4 text-center">

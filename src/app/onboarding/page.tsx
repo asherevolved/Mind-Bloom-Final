@@ -12,8 +12,11 @@ import { Logo } from '@/components/logo';
 import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Hand, Heart, Brain, Zap, Check, Trophy } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
+import { auth, db } from '@/lib/firebase';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+
 
 const totalSteps = 4;
 
@@ -42,30 +45,28 @@ const therapyPersonalities = [
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [mood, setMood] = useState([5]);
-  const [sleepQuality, setSleepQuality] = useState<string | null>(null);
+  const [sleepQuality, setSleepQuality] =useState <string | null>(null);
   const [supportTags, setSupportTags] = useState<string[]>([]);
   const [therapyTone, setTherapyTone] = useState<string | null>(null);
-  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   
   const router = useRouter();
   const { toast } = useToast();
 
   useEffect(() => {
-    const checkUser = async () => {
-      const guest = sessionStorage.getItem('isGuest') === 'true';
-      setIsGuest(guest);
+    const guest = sessionStorage.getItem('isGuest') === 'true';
+    setIsGuest(guest);
 
-      if (!guest) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          setAuthUserId(session.user.id);
-        } else {
-          router.push('/');
-        }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUserId(user.uid);
+      } else if (!guest) {
+        router.push('/');
       }
-    };
-    checkUser();
+    });
+
+    return () => unsubscribe();
   }, [router]);
 
 
@@ -80,27 +81,20 @@ export default function OnboardingPage() {
     );
   };
   
-  const awardBadge = async (userId: string, code: string, name: string) => {
-    const { data } = await supabase
-        .from('badges')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('badge_code', code)
-        .single();
-    
-    if (!data) { // if badge doesn't exist
-        const { error: insertError } = await supabase.from('badges').insert({
-            user_id: userId,
+  const awardBadge = async (currentUserId: string, code: string, name: string) => {
+    const badgeRef = doc(db, 'users', currentUserId, 'badges', code);
+    const badgeDoc = await getDoc(badgeRef);
+    if (!badgeDoc.exists()) {
+        await setDoc(badgeRef, {
             badge_code: code,
             badge_name: name,
+            unlockedAt: serverTimestamp(),
         });
-        if (!insertError) {
-            toast({
-                title: 'Badge Unlocked!',
-                description: `You've earned the "${name}" badge!`,
-                action: <Trophy className="h-5 w-5 text-yellow-500" />
-            });
-        }
+        toast({
+            title: 'Badge Unlocked!',
+            description: `You've earned the "${name}" badge!`,
+            action: <Trophy className="h-5 w-5 text-yellow-500" />
+        });
     }
   }
 
@@ -111,70 +105,32 @@ export default function OnboardingPage() {
         return;
     }
 
-    if (!authUserId) {
+    if (!userId) {
         toast({variant: 'destructive', title: 'Error', description: 'User not found. Please log in again.'});
         router.push('/');
         return;
     }
     
-    // 1. Get the internal user ID from the `users` table, or create it if it doesn't exist
-    let { data: userProfile, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_uid', authUserId)
-        .single();
-    
-    if (userError && userError.code !== 'PGRST116') { // PGRST116 is 'No rows found'
-        toast({variant: 'destructive', title: 'Database Error', description: 'Could not query user profile.'});
-        return;
+    try {
+        const userDocRef = doc(db, 'users', userId);
+        
+        const onboardingData = {
+            moodBaseline: mood[0],
+            sleepQuality: sleepQuality,
+            supportTags: supportTags,
+            therapyTone: therapyTone,
+            onboardingComplete: true
+        };
+        
+        // Use set with merge option true to create or update the document
+        await setDoc(userDocRef, onboardingData, { merge: true });
+
+        await awardBadge(userId, 'welcome_explorer', 'Welcome Explorer');
+
+        router.push('/dashboard');
+    } catch (error: any) {
+        toast({variant: 'destructive', title: 'Onboarding Error', description: error.message});
     }
-
-    if (!userProfile) {
-        const { data: { user } } = await supabase.auth.getUser();
-        const { data: newProfile, error: createError } = await supabase
-            .from('users')
-            .insert({ auth_uid: authUserId, name: user?.user_metadata.full_name || 'New User', email: user?.email })
-            .select('id')
-            .single();
-
-        if (createError || !newProfile) {
-            toast({variant: 'destructive', title: 'Profile Creation Error', description: 'Could not create your user profile. Please try again.'});
-            return;
-        }
-        userProfile = newProfile;
-    }
-
-    const internalUserId = userProfile.id;
-
-    // 2. Save onboarding data
-    const { error: onboardingError } = await supabase.from('onboarding').upsert({
-        user_id: internalUserId,
-        mood_baseline_score: mood[0],
-        sleep_quality_emoji: sleepQuality,
-        support_tags: supportTags,
-        completed: true,
-    }, { onConflict: 'user_id' });
-
-    if (onboardingError) {
-        toast({variant: 'destructive', title: 'Onboarding Error', description: onboardingError.message});
-        return;
-    }
-
-    // 3. Save preferences
-    const { error: prefsError } = await supabase.from('preferences').upsert({
-        user_id: internalUserId,
-        therapy_tone: therapyTone,
-    }, { onConflict: 'user_id' });
-    
-    if (prefsError) {
-        toast({variant: 'destructive', title: 'Preferences Error', description: prefsError.message});
-        return;
-    }
-
-    // 4. Award welcome badge
-    await awardBadge(internalUserId, 'welcome_explorer', 'Welcome Explorer');
-
-    router.push('/dashboard');
   };
 
   return (
@@ -228,7 +184,7 @@ export default function OnboardingPage() {
                 <CardHeader>
                   <CardTitle className="font-headline text-center">What do you want to work on?</CardTitle>
                   <CardDescription className="text-center">Select your main areas of focus.</CardDescription>
-                </CardHeader>
+                </Header>
                 <CardContent className="space-y-4">
                   {supportOptions.map((option) => (
                     <div key={option.id} className="flex items-center space-x-3 rounded-md border p-4 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">

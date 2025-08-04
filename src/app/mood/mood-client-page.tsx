@@ -9,11 +9,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Tag, Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MoodLog } from './page';
 import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 
 const moodIcons = [
@@ -49,26 +50,32 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
       return;
     }
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from('mood_logs')
-      .insert({
-        user_id: userId,
+    try {
+      const docRef = await addDoc(collection(db, 'users', userId, 'mood_logs'), {
         mood_score: mood[0],
         tags: selectedTags,
         note: note,
-      })
-      .select();
+        createdAt: serverTimestamp(),
+      });
+      
+      const newLog = {
+          id: docRef.id,
+          mood_score: mood[0],
+          tags: selectedTags,
+          note: note,
+          created_at: new Date().toISOString()
+      };
 
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error logging mood', description: error.message });
-    } else if (data) {
       toast({ title: 'Mood Logged!', description: 'Your mood has been saved.' });
-      setPastMoods([data[0], ...pastMoods]);
+      setPastMoods([newLog, ...pastMoods]);
       setMood([5]);
       setSelectedTags([]);
       setNote('');
       await checkBadges();
       router.refresh();
+
+    } catch(error: any) {
+      toast({ variant: 'destructive', title: 'Error logging mood', description: error.message });
     }
     setIsLoading(false);
   };
@@ -76,44 +83,36 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
   const checkBadges = async () => {
       if (!userId) return;
 
-      const { count: logCount, error: countError } = await supabase
-        .from('mood_logs')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
+      const badgeCode = 'mood_starter';
+      const badgeRef = doc(db, 'users', userId, 'badges', badgeCode);
+      const badgeDoc = await getDoc(badgeRef);
 
-      if (countError) return;
-
-      if (logCount === 1) {
-        awardBadge('mood_starter', 'Mood Starter');
+      if (!badgeDoc.exists()) {
+          // In real app, check if this is the first mood log
+          awardBadge(badgeCode, 'Mood Starter');
       }
       // Simplified streak logic for demo
-      if (logCount && logCount >= 3) {
+      if (pastMoods.length >= 2) { // check if at least 3 logs exist now
         awardBadge('mood_streaker', 'Mood Streaker');
       }
   }
 
   const awardBadge = async (code: string, name: string) => {
     if (!userId) return;
-    const { data, error } = await supabase
-        .from('badges')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('badge_code', code)
-        .single();
+    const badgeRef = doc(db, 'users', userId, 'badges', code);
+    const docSnap = await getDoc(badgeRef);
     
-    if (!data) { // if badge doesn't exist
-        const { error: insertError } = await supabase.from('badges').insert({
-            user_id: userId,
+    if (!docSnap.exists()) { // if badge doesn't exist
+        await setDoc(badgeRef, {
             badge_code: code,
             badge_name: name,
+            unlockedAt: serverTimestamp()
         });
-        if (!insertError) {
-            toast({
-                title: 'Badge Unlocked!',
-                description: `You've earned the "${name}" badge!`,
-                action: <Trophy className="h-5 w-5 text-yellow-500" />
-            });
-        }
+        toast({
+            title: 'Badge Unlocked!',
+            description: `You've earned the "${name}" badge!`,
+            action: <Trophy className="h-5 w-5 text-yellow-500" />
+        });
     }
   }
 
@@ -184,7 +183,7 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
                         </div>
                         {log.note && <p className="text-sm text-muted-foreground italic">"{log.note}"</p>}
                         <div className="mt-2 flex flex-wrap gap-1">
-                          {log.tags.map(tag => <Badge key={tag} variant="secondary">{tag}</Badge>)}
+                          {log.tags && log.tags.map(tag => <Badge key={tag} variant="secondary">{tag}</Badge>)}
                         </div>
                       </div>
                     </li>
@@ -205,5 +204,3 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
       </div>
   );
 }
-
-    

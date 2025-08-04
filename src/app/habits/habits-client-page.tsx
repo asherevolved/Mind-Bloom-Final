@@ -8,11 +8,12 @@ import { Check, Flame, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isToday, subDays } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -22,7 +23,7 @@ type Habit = {
   category: string;
   streak_count: number;
   last_completed: string | null;
-  user_id: string;
+  userId: string;
 };
 
 interface HabitsClientPageProps {
@@ -40,19 +41,31 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
   const handleAddHabit = async () => {
     if (!userId || !newHabitTitle.trim()) return;
     setIsLoading(true);
-    const { data, error } = await supabase.from('habits').insert({
-        user_id: userId,
-        title: newHabitTitle,
-        category: 'General'
-    }).select().single();
+    try {
+        const docRef = await addDoc(collection(db, 'users', userId, 'habits'), {
+            title: newHabitTitle,
+            category: 'General',
+            streak_count: 0,
+            last_completed: null,
+            createdAt: serverTimestamp()
+        });
+        
+        const newHabit = {
+            id: docRef.id,
+            title: newHabitTitle,
+            category: 'General',
+            streak_count: 0,
+            last_completed: null,
+            userId: userId,
+        };
 
-    if (error) {
-        toast({ variant: 'destructive', title: 'Error adding habit', description: error.message });
-    } else if (data) {
-        setHabits([...habits, data]);
+        setHabits([...habits, newHabit]);
         setNewHabitTitle('');
-        toast({ title: 'Habit Added!', description: `You're now tracking "${data.title}".` });
+        toast({ title: 'Habit Added!', description: `You're now tracking "${newHabitTitle}".` });
         router.refresh();
+
+    } catch(error: any) {
+        toast({ variant: 'destructive', title: 'Error adding habit', description: error.message });
     }
     setIsLoading(false);
   };
@@ -71,17 +84,17 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
 
       const optimisticHabits = habits.map(h => h.id === habitId ? { ...h, streak_count: newStreak, last_completed: newLastCompleted } : h);
       setHabits(optimisticHabits);
-
-      const { error } = await supabase.from('habits').update({
-          streak_count: newStreak,
-          last_completed: newLastCompleted,
-      }).eq('id', habitId);
-
-      if (error) {
+      
+      try {
+        const habitRef = doc(db, 'users', userId, 'habits', habitId);
+        await updateDoc(habitRef, {
+            streak_count: newStreak,
+            last_completed: newLastCompleted,
+        });
+        router.refresh(); // Re-fetch server data
+      } catch (error: any) {
           toast({ variant: 'destructive', title: 'Error updating habit', description: error.message });
           setHabits(habits); // Revert optimistic update
-      } else {
-        router.refresh(); // Re-fetch server data
       }
   }
 

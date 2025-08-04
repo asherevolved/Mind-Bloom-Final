@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Book, Plus, Tag, Trophy } from 'lucide-react';
+import { Plus, Tag, Trophy } from 'lucide-react';
 import {
   Accordion,
   AccordionContent,
@@ -14,11 +14,12 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { JournalEntry } from './page';
 import { useRouter } from 'next/navigation';
+import { db } from '@/lib/firebase';
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 
 interface JournalClientPageProps {
@@ -46,23 +47,32 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
     }
     
     setIsLoading(true);
-    const { data, error } = await supabase.from('journal').insert({
-        user_id: userId,
-        title,
-        mood_tag: moodTag,
-        entry
-    }).select().single();
+    try {
+        const docRef = await addDoc(collection(db, 'users', userId, 'journal'), {
+            title,
+            mood_tag: moodTag,
+            entry,
+            createdAt: serverTimestamp()
+        });
+        
+        const newEntry = {
+            id: docRef.id,
+            title,
+            mood_tag: moodTag,
+            entry,
+            created_at: new Date().toISOString() // Approximate client-side time
+        };
 
-    if(error){
-        toast({ variant: 'destructive', title: 'Error saving entry', description: error.message});
-    } else if (data) {
         toast({ title: 'Entry Saved!', description: 'Your journal has been updated.'});
-        setPastEntries([data, ...pastEntries]);
+        setPastEntries([newEntry, ...pastEntries]);
         setTitle('');
         setMoodTag('');
         setEntry('');
         await checkBadges();
         router.refresh();
+
+    } catch(error: any) {
+        toast({ variant: 'destructive', title: 'Error saving entry', description: error.message});
     }
     setIsLoading(false);
   }
@@ -70,40 +80,35 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
   const checkBadges = async () => {
       if (!userId) return;
 
-      const { count, error: countError } = await supabase
-        .from('journal')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', userId);
+      const badgeCode = 'thought_starter';
+      const badgeRef = doc(db, 'users', userId, 'badges', badgeCode);
+      const badgeDoc = await getDoc(badgeRef);
 
-      if (countError) return;
-
-      if (count === 1) {
-        awardBadge('thought_starter', 'Thought Starter');
+      if (!badgeDoc.exists()) {
+          // In a real app you might check if entry count is 1
+          await awardBadge(badgeCode, 'Thought Starter');
       }
   }
 
   const awardBadge = async (code: string, name: string) => {
     if (!userId) return;
-    const { data, error } = await supabase
-        .from('badges')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('badge_code', code)
-        .single();
-    
-    if (!data) { // if badge doesn't exist
-        const { error: insertError } = await supabase.from('badges').insert({
-            user_id: userId,
+    try {
+        const badgeRef = doc(db, 'users', userId, 'badges', code);
+        await setDoc(badgeRef, {
             badge_code: code,
             badge_name: name,
+            unlockedAt: serverTimestamp(),
         });
-        if (!insertError) {
-            toast({
-                title: 'Badge Unlocked!',
-                description: `You've earned the "${name}" badge!`,
-                action: <Trophy className="h-5 w-5 text-yellow-500" />
-            });
-        }
+
+        toast({
+            title: 'Badge Unlocked!',
+            description: `You've earned the "${name}" badge!`,
+            action: <Trophy className="h-5 w-5 text-yellow-500" />
+        });
+
+    } catch (error: any) {
+        // Don't bother user if badge award fails
+        console.error("Failed to award badge", error);
     }
   }
 
@@ -152,7 +157,7 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
                             <p className="text-xs text-muted-foreground hidden sm:block">{new Date(entry.created_at).toLocaleDateString()}</p>
                         </div>
                         <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="secondary">{entry.mood_tag}</Badge>
+                            {entry.mood_tag && <Badge variant="secondary">{entry.mood_tag}</Badge>}
                             <p className="text-xs text-muted-foreground sm:hidden">{new Date(entry.created_at).toLocaleDateString()}</p>
                         </div>
                         </div>

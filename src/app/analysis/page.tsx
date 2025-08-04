@@ -12,7 +12,10 @@ import Link from 'next/link';
 import { analyzeSession, AnalyzeSessionOutput, AnalyzeSessionInput } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { supabase } from '@/lib/supabaseClient';
+import { auth, db } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+
 
 export default function AnalysisPage() {
   const [analysis, setAnalysis] = useState<AnalyzeSessionOutput | null>(null);
@@ -24,47 +27,47 @@ export default function AnalysisPage() {
   const [hasAwardedBadge, setHasAwardedBadge] = useState(false);
 
   useEffect(() => {
-    const processSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const currentUserId = session?.user?.id;
-      if(currentUserId) {
-        const {data: userProfile} = await supabase.from('users').select('id').eq('auth_uid', currentUserId).single();
-        setUserId(userProfile?.id || null);
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        setUserId(user.uid);
+      } else {
+        const guestSession = sessionStorage.getItem('sessionData');
+        if (!guestSession) {
+            router.push('/chat');
+        }
       }
-      
+    });
+    return () => unsubscribe();
+  }, [router]);
 
+  useEffect(() => {
+    if (userId === null && !sessionStorage.getItem('sessionData')) return;
+
+    const processSession = async () => {
       const sessionId = sessionStorage.getItem('sessionId');
       let transcript = '';
       let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
 
-      if (currentUserId) {
-        const {data: userProfile} = await supabase.from('users').select('id').eq('auth_uid', currentUserId).single();
-        if(userProfile) {
-            const { data: onbData } = await supabase.from('onboarding').select('*').eq('user_id', userProfile.id).single();
-            const { data: prefsData } = await supabase.from('preferences').select('therapy_tone').eq('user_id', userProfile.id).single();
+      if (userId) {
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (userDoc.exists()) {
+            const data = userDoc.data();
             onboardingData = {
-                moodBaseline: onbData?.mood_baseline_score,
-                supportTags: onbData?.support_tags,
-                therapyTone: prefsData?.therapy_tone
+                moodBaseline: data.moodBaseline,
+                supportTags: data.supportTags,
+                therapyTone: data.therapyTone,
             };
         }
       }
 
-      if (sessionId && currentUserId) {
-        const { data: sessionData, error: sessionError } = await supabase
-          .from('therapy_sessions')
-          .select('session_data')
-          .eq('id', sessionId)
-          .eq('user_id', currentUserId)
-          .single();
-        
-        if (sessionError || !sessionData) {
+      if (sessionId && userId) {
+        const sessionDoc = await getDoc(doc(db, 'therapy_sessions', sessionId));
+        if (!sessionDoc.exists() || sessionDoc.data().userId !== userId) {
           setError('Could not retrieve session data. Please try again.');
           setIsLoading(false);
           return;
         }
-
-        const messages = sessionData.session_data.messages || [];
+        const messages = sessionDoc.data().messages || [];
         transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
       } else {
         const guestSession = sessionStorage.getItem('sessionData');
@@ -85,14 +88,15 @@ export default function AnalysisPage() {
         setAnalysis(result);
 
         if (userId && sessionId) {
-          const { error: analysisError } = await supabase.from('analysis').insert({
-            user_id: userId,
-            session_id: sessionId,
-            summary: result.emotionalSummary.summaryText,
-            emotional_insights: result.insights,
-            advice_steps: result.suggestedSteps
-          });
-          if (analysisError) throw analysisError;
+          const analysisData = {
+              userId,
+              sessionId,
+              summary: result.emotionalSummary.summaryText,
+              emotionalInsights: result.insights,
+              suggestedSteps: result.suggestedSteps,
+              createdAt: serverTimestamp(),
+          };
+          await addDoc(collection(db, 'analysis'), analysisData);
           await awardBadge('self_reflector', 'Self-Reflector', userId);
         }
 
@@ -111,27 +115,21 @@ export default function AnalysisPage() {
   }, [userId]);
 
   const awardBadge = async (code: string, name: string, currentUserId: string) => {
-    const { data } = await supabase
-        .from('badges')
-        .select('id')
-        .eq('user_id', currentUserId)
-        .eq('badge_code', code)
-        .single();
-    
-    if (!data) { // if badge doesn't exist
-        const { error: insertError } = await supabase.from('badges').insert({
-            user_id: currentUserId,
+    const badgeRef = doc(db, 'users', currentUserId, 'badges', code);
+    const badgeDoc = await getDoc(badgeRef);
+
+    if (!badgeDoc.exists()) { // if badge doesn't exist
+        await setDoc(badgeRef, {
             badge_code: code,
             badge_name: name,
+            unlockedAt: serverTimestamp(),
         });
-        if (!insertError) {
-            setHasAwardedBadge(true);
-            toast({
-                title: 'Badge Unlocked!',
-                description: `You've earned the "${name}" badge!`,
-                action: <Trophy className="h-5 w-5 text-yellow-500" />
-            });
-        }
+        setHasAwardedBadge(true);
+        toast({
+            title: 'Badge Unlocked!',
+            description: `You've earned the "${name}" badge!`,
+            action: <Trophy className="h-5 w-5 text-yellow-500" />
+        });
     }
   }
 
@@ -141,19 +139,19 @@ export default function AnalysisPage() {
         toast({ title: 'Task Added!', description: `(Guest) "${title}" has been added to your list. 💪` });
         return;
     }
-    const { error } = await supabase.from('tasks').insert({
-        user_id: userId,
-        title: title,
-        category: 'AI-Suggested'
-    });
-
-    if(error){
-        toast({variant: 'destructive', title: 'Error', description: 'Failed to add task.'});
-    } else {
+    try {
+        await addDoc(collection(db, 'users', userId, 'tasks'), {
+            title: title,
+            category: 'AI-Suggested',
+            is_completed: false,
+            createdAt: serverTimestamp()
+        });
         toast({
             title: 'Task Added!',
             description: `"${title}" has been added to your list. 💪`,
         });
+    } catch(error: any){
+        toast({variant: 'destructive', title: 'Error', description: 'Failed to add task.'});
     }
   };
 

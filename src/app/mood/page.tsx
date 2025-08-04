@@ -1,48 +1,65 @@
 
+
 import { MainAppLayout } from '@/components/main-app-layout';
-import { cookies } from 'next/headers';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { MoodClientPage } from './mood-client-page';
+import { cookies } from 'next/headers';
+import { auth, db } from '@/lib/firebase-admin';
+import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
+
 
 export type MoodLog = {
   id: string;
   mood_score: number;
   tags: string[];
   note: string;
-  created_at: string;
+  created_at: string; // ISO String
 };
 
-async function getMoods(): Promise<MoodLog[]> {
-    const cookieStore = cookies();
-    const supabaseServer = createServerComponentClient({ cookies: () => cookieStore });
+async function getMoods(userId: string): Promise<MoodLog[]> {
+    if(!userId) return [];
+    
+    try {
+        const moodsRef = collection(db, 'users', userId, 'mood_logs');
+        const q = query(moodsRef, orderBy('createdAt', 'desc'));
+        const moodsSnapshot = await getDocs(q);
 
-    const { data: { session } } = await supabaseServer.auth.getSession();
-    if(!session) return [];
-    
-    const { data, error } = await supabaseServer
-      .from('mood_logs')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-        console.error('Error fetching moods', error);
+        return moodsSnapshot.docs.map(doc => {
+            const data = doc.data();
+            const createdAtTimestamp = data.createdAt as Timestamp;
+            return {
+                id: doc.id,
+                mood_score: data.mood_score,
+                tags: data.tags || [],
+                note: data.note || '',
+                created_at: createdAtTimestamp.toDate().toISOString(),
+            };
+        });
+    } catch(error) {
+        console.error('Error fetching moods from Firestore:', error);
         return [];
     }
-
-    return data || [];
 }
 
 
 export default async function MoodPage() {
-  const pastMoods = await getMoods();
-  const cookieStore = cookies();
-  const supabaseServer = createServerComponentClient({ cookies: () => cookieStore });
-  const { data: { session } } = await supabaseServer.auth.getSession();
+  let userId: string | null = null;
+  let pastMoods: MoodLog[] = [];
+
+  try {
+      const cookieStore = cookies();
+      const idToken = cookieStore.get('idToken')?.value;
+      if (idToken) {
+          const decodedToken = await auth.verifyIdToken(idToken);
+          userId = decodedToken.uid;
+          pastMoods = await getMoods(userId);
+      }
+  } catch(error) {
+      console.log("Could not authenticate user on server", error);
+  }
   
   return (
     <MainAppLayout>
-        <MoodClientPage initialMoods={pastMoods} userId={session?.user.id || null} />
+        <MoodClientPage initialMoods={pastMoods} userId={userId} />
     </MainAppLayout>
   );
 }

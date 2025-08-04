@@ -6,9 +6,9 @@ import { useRouter } from 'next/navigation';
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Mic, MicOff, Send, PhoneOff, User, Trophy, Volume2 } from 'lucide-react';
+import { Bot, Mic, MicOff, Send, PhoneOff, User, Volume2 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { therapistChat, TherapistChatInput } from '@/ai/flows/therapist-chat';
+import { therapistChat } from '@/ai/flows/therapist-chat';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -21,7 +21,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { supabase } from '@/lib/supabaseClient';
+import { auth, db } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { textToSpeech } from '@/ai/flows/text-to-speech';
 
 type Message = {
@@ -35,31 +37,29 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [therapyTone, setTherapyTone] = useState<string | undefined>(undefined);
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setAuthUserId(session.user.id);
-        const { data: profile } = await supabase.from('users').select('id').eq('auth_uid', session.user.id).single();
-        if (profile) {
-            const { data: prefs } = await supabase.from('preferences').select('therapy_tone').eq('user_id', profile.id).single();
-            setTherapyTone(prefs?.therapy_tone || 'Reflective Listener');
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setUserId(user.uid);
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setTherapyTone(userDoc.data().therapyTone || 'Reflective Listener');
         }
       } else {
         const isGuest = sessionStorage.getItem('isGuest') === 'true';
         if (!isGuest) {
-            router.push('/');
+          router.push('/');
         }
         setTherapyTone('Reflective Listener'); // Default for guests
       }
-    };
-    checkUser();
+    });
+    return () => unsubscribe();
   }, [router]);
 
   useEffect(() => {
@@ -75,7 +75,10 @@ export default function ChatPage() {
       setIsLoading(true);
 
       try {
-        const chatHistory = newMessages.slice(-10);
+        const chatHistory = newMessages.slice(-10).map(m => ({
+            role: m.role,
+            content: m.content
+        }));
         const response = await therapistChat({ message: input, chatHistory, therapyTone });
         
         let audioUrl: string | undefined = undefined;
@@ -119,27 +122,18 @@ export default function ChatPage() {
       return;
     }
     
-    if (authUserId) {
-        const {data: userProfile} = await supabase.from('users').select('id').eq('auth_uid', authUserId).single();
-        if (!userProfile) {
-             toast({ variant: 'destructive', title: 'Error Saving Session', description: "Could not find your user profile to save the session." });
-            return;
-        }
-
-       const { data, error } = await supabase
-        .from('therapy_sessions')
-        .insert({ user_id: userProfile.id, session_data: { messages } })
-        .select('id')
-        .single();
-
-        if (error) {
+    if (userId) {
+        try {
+            const sessionData = {
+                userId: userId,
+                messages: messages,
+                createdAt: serverTimestamp(),
+            };
+            const docRef = await addDoc(collection(db, 'therapy_sessions'), sessionData);
+            sessionStorage.setItem('sessionId', docRef.id);
+            router.push('/analysis');
+        } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error Saving Session', description: error.message });
-            return;
-        }
-        
-        if (data) {
-          sessionStorage.setItem('sessionId', data.id);
-          router.push('/analysis');
         }
     } else {
         // Handle guest mode
