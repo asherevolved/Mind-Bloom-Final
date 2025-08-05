@@ -32,20 +32,30 @@ export default function SignupPage() {
       if (user) {
         // Update Firebase Auth profile
         await updateProfile(user, { displayName: name });
-        try {
-            // The handle_new_user trigger in Supabase should have already created a profile.
-            // We just need to update it with the name.
-            const { error: updateError } = await supabase
-              .from('profiles')
-              .update({ name: name, updated_at: new Date().toISOString() })
-              .eq('id', user.uid);
+        
+        // The handle_new_user trigger in Supabase should have already created a profile.
+        // We just need to update it with the name from the form.
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ name: name, updated_at: new Date().toISOString() })
+          .eq('id', user.uid);
 
-            if (updateError) throw updateError;
-
-        } catch (dbError: any) {
-            toast({ variant: 'destructive', title: 'Database Error', description: `User created, but failed to save profile: ${dbError.message}` });
-            setIsLoading(false);
-            return;
+        if (updateError) {
+          // If the trigger failed or didn't run, we can try to insert the profile manually.
+          const { data: profile, error: fetchError } = await supabase
+            .from('profiles').select('id').eq('id', user.uid).single();
+          
+          if (!profile) {
+              const { error: insertError } = await supabase.from('profiles').insert({
+                id: user.uid,
+                name,
+                email,
+                photo_url: user.photoURL,
+              });
+              if (insertError) throw insertError;
+          } else {
+            throw updateError;
+          }
         }
         
         toast({ title: 'Account Created!', description: "Welcome! Let's get you set up." });

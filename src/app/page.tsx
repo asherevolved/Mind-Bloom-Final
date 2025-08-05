@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, User } from 'firebase/auth';
 import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
@@ -21,34 +21,51 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
 
+  const handleUserLogin = async (user: User) => {
+    try {
+        // Check if a profile exists.
+        let { data: profile, error: fetchError } = await supabase
+            .from('profiles')
+            .select('onboarding_complete')
+            .eq('id', user.uid)
+            .single();
+
+        // If profile doesn't exist, create one (handles users created before profile trigger was in place)
+        if (fetchError && fetchError.code === 'PGRST116') {
+             const { error: insertError } = await supabase.from('profiles').insert({
+                id: user.uid,
+                name: user.displayName,
+                email: user.email,
+                photo_url: user.photoURL,
+            });
+            if (insertError) throw insertError;
+            // After inserting, the profile is new, so onboarding is not complete
+            profile = { onboarding_complete: false };
+        } else if (fetchError) {
+            throw fetchError;
+        }
+
+        if (profile?.onboarding_complete) {
+            router.push('/dashboard');
+        } else {
+            router.push('/onboarding');
+        }
+    } catch (error: any) {
+        toast({ variant: 'destructive', title: 'Login Failed', description: `Could not sync profile: ${error.message}` });
+        setIsLoading(false);
+        setIsGoogleLoading(false);
+    }
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-
-      if (user) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('onboarding_complete')
-          .eq('id', user.uid)
-          .single();
-
-        if (error && error.code !== 'PGRST116') { // PGRST116: row not found
-          throw error;
-        }
-        
-        if (data?.onboarding_complete) {
-          router.push('/dashboard');
-        } else {
-          router.push('/onboarding');
-        }
-      }
+      await handleUserLogin(userCredential.user);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Login Failed', description: error.message });
-    } finally {
       setIsLoading(false);
     }
   };
@@ -65,28 +82,9 @@ export default function LoginPage() {
     const provider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      if (user) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('onboarding_complete')
-          .eq('id', user.uid)
-          .single();
-        
-        if (error && error.code !== 'PGRST116') {
-            throw error;
-        }
-
-        if (data?.onboarding_complete) {
-          router.push('/dashboard');
-        } else {
-          router.push('/onboarding');
-        }
-      }
+      await handleUserLogin(result.user);
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Google Login Failed', description: error.message });
-    } finally {
       setIsGoogleLoading(false);
     }
   };
