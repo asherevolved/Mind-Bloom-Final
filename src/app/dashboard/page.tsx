@@ -32,108 +32,103 @@ export default function DashboardPage() {
     const router = useRouter();
 
     useEffect(() => {
-        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-            const currentUser = session?.user;
-            setUser(currentUser ?? null);
-            if (!currentUser) {
+        const fetchUserAndData = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                setUser(session.user);
+                processData(session.user);
+            } else {
                 router.push('/');
             }
-        });
-
-        return () => {
-            authListener.subscription.unsubscribe();
         };
+
+        fetchUserAndData();
     }, [router]);
 
-    useEffect(() => {
-        if (user) {
-            const processData = async () => {
-                setIsLoading(true);
-                
-                try {
-                    const { data: profileData, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('name, onboarding_complete, support_tags, email')
-                        .eq('id', user.id)
-                        .single();
+    const processData = async (currentUser: User) => {
+        setIsLoading(true);
+        try {
+            const { data: profileData, error: profileError } = await supabase
+                .from('profiles')
+                .select('name, onboarding_complete, support_tags, email')
+                .eq('id', currentUser.id)
+                .single();
 
-                    if (profileError) throw profileError;
+            if (profileError) throw profileError;
 
-                    // Redirect to onboarding if not complete
-                    if (!profileData.onboarding_complete) {
-                        router.push('/onboarding');
-                        return;
-                    }
+            // Redirect to onboarding if not complete
+            if (!profileData.onboarding_complete) {
+                router.push('/onboarding');
+                return;
+            }
 
-                    const { data: moodData, error: moodError } = await supabase
-                        .from('mood_logs')
-                        .select('created_at, note')
-                        .eq('user_id', user.id)
-                        .order('created_at', { ascending: false })
-                        .limit(1);
-                    
-                    if (moodError) throw moodError;
+            const { data: moodData, error: moodError } = await supabase
+                .from('mood_logs')
+                .select('created_at, note')
+                .eq('user_id', currentUser.id)
+                .order('created_at', { ascending: false })
+                .limit(1);
+            
+            if (moodError) throw moodError;
 
-                    const lastMood = moodData?.[0] ? new Date(moodData[0].created_at) : null;
-                    const moodLoggedToday = lastMood ? isToday(lastMood) : false;
+            const lastMood = moodData?.[0] ? new Date(moodData[0].created_at) : null;
+            const moodLoggedToday = lastMood ? isToday(lastMood) : false;
 
-                    const { data: tasksData, error: tasksError } = await supabase
-                        .from('tasks')
-                        .select('is_completed')
-                        .eq('user_id', user.id);
+            const { data: tasksData, error: tasksError } = await supabase
+                .from('tasks')
+                .select('is_completed')
+                .eq('user_id', currentUser.id);
 
-                    if (tasksError) throw tasksError;
+            if (tasksError) throw tasksError;
 
-                    const { count: badgesCount, error: badgesError } = await supabase
-                        .from('user_badges')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('user_id', user.id);
-                    
-                    if (badgesError) throw badgesError;
+            const { count: badgesCount, error: badgesError } = await supabase
+                .from('user_badges')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', currentUser.id);
+            
+            if (badgesError) throw badgesError;
 
-                    const { data: journalData, error: journalError } = await supabase
-                        .from('journal_entries')
-                        .select('entry')
-                        .eq('user_id', user.id)
-                        .order('created_at', { ascending: false })
-                        .limit(1);
+            const { data: journalData, error: journalError } = await supabase
+                .from('journal_entries')
+                .select('entry')
+                .eq('user_id', currentUser.id)
+                .order('created_at', { ascending: false })
+                .limit(1);
 
-                    if (journalError) throw journalError;
+            if (journalError) throw journalError;
 
-                    const { data: habitsData, error: habitsError } = await supabase
-                        .from('habits')
-                        .select('title, streak_count')
-                        .eq('user_id', user.id)
-                        .order('streak_count', { ascending: false })
-                        .limit(2);
+            const { data: habitsData, error: habitsError } = await supabase
+                .from('habits')
+                .select('title, streak_count')
+                .eq('user_id', currentUser.id)
+                .order('streak_count', { ascending: false })
+                .limit(2);
 
-                    if (habitsError) throw habitsError;
-                    
-                    const tip = await getAiTip({
-                        onboardingGoals: profileData.support_tags || [],
-                        recentMood: moodData?.[0]?.note || 'neutral',
-                    });
+            if (habitsError) throw habitsError;
+            
+            const tip = await getAiTip({
+                onboardingGoals: profileData.support_tags || [],
+                recentMood: moodData?.[0]?.note || 'neutral',
+            });
 
-                    setData({
-                        name: profileData.name || profileData.email || 'Explorer',
-                        moodLogged: moodLoggedToday,
-                        tasksLeft: tasksData?.filter(t => !t.is_completed).length || 0,
-                        totalTasks: tasksData?.length || 0,
-                        badgesUnlocked: badgesCount || 0,
-                        lastJournalEntry: journalData?.[0]?.entry || null,
-                        habitStreaks: habitsData?.map(h => ({ name: h.title, streak: h.streak_count })) || [],
-                        aiTip: tip.tip,
-                    });
+            setData({
+                name: profileData.name || profileData.email || 'Explorer',
+                moodLogged: moodLoggedToday,
+                tasksLeft: tasksData?.filter(t => !t.is_completed).length || 0,
+                totalTasks: tasksData?.length || 0,
+                badgesUnlocked: badgesCount || 0,
+                lastJournalEntry: journalData?.[0]?.entry || null,
+                habitStreaks: habitsData?.map(h => ({ name: h.title, streak: h.streak_count })) || [],
+                aiTip: tip.tip,
+            });
 
-                } catch (error) {
-                    console.error("Error fetching dashboard data:", error);
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-            processData();
+        } catch (error) {
+            console.error("Error fetching dashboard data:", error);
+        } finally {
+            setIsLoading(false);
         }
-    }, [user, router]);
+    };
+
 
     if (isLoading || !data) {
         return (

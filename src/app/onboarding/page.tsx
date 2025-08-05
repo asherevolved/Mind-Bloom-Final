@@ -52,20 +52,27 @@ export default function OnboardingPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    const guest = sessionStorage.getItem('isGuest') === 'true';
-    setIsGuest(guest);
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-        const currentUser = session?.user;
-        setUser(currentUser ?? null);
-        if (!currentUser && !guest) {
-            router.push('/');
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('onboarding_complete')
+          .eq('id', session.user.id)
+          .single();
+        if (profile?.onboarding_complete) {
+          router.push('/dashboard');
         }
-    });
-
-    return () => {
-        authListener.subscription.unsubscribe();
+      } else {
+        const guest = sessionStorage.getItem('isGuest') === 'true';
+        setIsGuest(guest);
+        if (!guest) {
+          router.push('/');
+        }
+      }
     };
+    checkUser();
   }, [router]);
 
 
