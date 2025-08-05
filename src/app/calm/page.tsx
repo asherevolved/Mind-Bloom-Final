@@ -7,7 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Ear, Waves, Wind, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import { Slider } from '@/components/ui/slider';
-import { cn } from '@/lib/utils';
 
 const sounds = [
     { name: 'Ocean Waves', icon: Waves, path: '/sounds/ocean-waves.mp3' },
@@ -18,17 +17,16 @@ const sounds = [
 export default function CalmPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [activeSoundPath, setActiveSoundPath] = useState<string | null>(null);
-  const [activeSoundName, setActiveSoundName] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState([50]);
 
+  // Correctly initialize the Audio object on the client side
   useEffect(() => {
-    // Initialize audio only once on the client side
     audioRef.current = new Audio();
     audioRef.current.loop = true;
 
     const audio = audioRef.current;
-    
+
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
 
@@ -46,35 +44,48 @@ export default function CalmPage() {
     };
   }, []);
   
+  // Effect to handle volume changes
   useEffect(() => {
     if (audioRef.current) {
         audioRef.current.volume = volume[0] / 100;
     }
   }, [volume]);
 
+  // Effect to play audio when the source changes
+  useEffect(() => {
+    if (audioRef.current && activeSoundPath) {
+      audioRef.current.src = activeSoundPath;
+      audioRef.current.play().catch(e => console.error("Error playing audio:", e));
+    } else if (audioRef.current) {
+      audioRef.current.pause();
+    }
+  }, [activeSoundPath]);
 
-  const selectSound = (sound: {name: string, path: string}) => {
-    if (!audioRef.current) return;
 
-    if (activeSoundPath === sound.path) {
-        // If the same sound is clicked, toggle play/pause
-        togglePlayPause();
+  const selectSound = (soundPath: string) => {
+    if (activeSoundPath === soundPath) {
+      // If the same sound is clicked, toggle play/pause
+      togglePlayPause();
     } else {
-        // If a new sound is selected, play it
-        setActiveSoundPath(sound.path);
-        setActiveSoundName(sound.name);
-        audioRef.current.src = sound.path;
-        audioRef.current.play().catch(e => console.error("Error playing audio:", e));
+      // If a new sound is selected, set it as active, which triggers the useEffect
+      setActiveSoundPath(soundPath);
     }
   };
 
   const togglePlayPause = () => {
       if (!audioRef.current) return;
+      
       if (isPlaying) {
           audioRef.current.pause();
       } else {
-          audioRef.current.play().catch(e => console.error("Error playing audio:", e));
+          if (audioRef.current.src) {
+            audioRef.current.play().catch(e => console.error("Error playing audio:", e));
+          }
       }
+  }
+
+  const getSoundName = (path: string | null) => {
+    return sounds.find(s => s.path === path)?.name || null;
   }
 
   return (
@@ -128,7 +139,7 @@ export default function CalmPage() {
                         key={sound.name}
                         variant={activeSoundPath === sound.path ? 'default' : 'outline'} 
                         className="h-20 flex-col gap-2"
-                        onClick={() => selectSound(sound)}
+                        onClick={() => selectSound(sound.path)}
                     >
                         <sound.icon />
                         <span>{sound.name}</span>
@@ -141,7 +152,7 @@ export default function CalmPage() {
                     <div className="flex items-center justify-between">
                         <div className="space-y-1">
                             <p className="text-sm text-muted-foreground">Now Playing</p>
-                            <h4 className="font-semibold">{activeSoundName}</h4>
+                            <h4 className="font-semibold">{getSoundName(activeSoundPath)}</h4>
                         </div>
                         <Button variant="ghost" size="icon" onClick={togglePlayPause}>
                             {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
