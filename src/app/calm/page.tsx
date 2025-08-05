@@ -4,15 +4,13 @@
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Ear, Waves, Wind, CloudRain, Trees } from 'lucide-react';
+import { Ear, Waves, Wind } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 const sounds = [
     { name: 'Ocean Waves', icon: Waves, path: '/sounds/ocean-waves.mp3' },
     { name: 'Gentle Wind', icon: Wind, path: '/sounds/gentle-wind.mp3' },
     { name: 'White Noise', icon: Ear, path: '/sounds/white-noise.mp3' },
-    { name: 'Rainfall', icon: CloudRain, path: '/sounds/rainfall.mp3' },
-    { name: 'Forest', icon: Trees, path: '/sounds/forest.mp3' },
 ]
 
 export default function CalmPage() {
@@ -38,7 +36,7 @@ export default function CalmPage() {
           setActiveSound(null);
         } else {
           audioRef.current.src = soundPath;
-          audioRef.current.play();
+          audioRef.current.play().catch(e => console.error("Error playing audio:", e));
           setActiveSound(soundName);
         }
     }
@@ -88,7 +86,7 @@ export default function CalmPage() {
               <CardTitle>White Noise & Soundscapes</CardTitle>
               <CardDescription>Listen to calming sounds.</CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
+            <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {sounds.map(sound => (
                 <Button 
                     key={sound.name}
