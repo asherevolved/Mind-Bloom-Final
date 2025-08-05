@@ -1,47 +1,75 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Lightbulb, Plus, Trash2 } from 'lucide-react';
+import { Lightbulb, Plus, Trash2, Trophy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Task, SuggestedTask } from './page';
+import { supabase } from '@/lib/supabase';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
     initialSuggestedTasks: SuggestedTask[];
     userId: string | null;
+    isLoading: boolean;
+    refetchTasks: () => void;
 }
 
-export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }: TasksClientPageProps) {
+export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, isLoading, refetchTasks }: TasksClientPageProps) {
     const { toast } = useToast();
-    const [tasks, setTasks] = useState<Task[]>(initialTasks);
-    const [suggestedTasks] = useState<SuggestedTask[]>(initialSuggestedTasks);
     const [newTaskText, setNewTaskText] = useState('');
-    const [isLoading, setIsLoading] = useState(!initialTasks);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    const awardBadge = async (code: string, name: string) => {
+        if (!userId) return;
 
-    useEffect(() => {
-      setTasks(initialTasks);
-      if(initialTasks) setIsLoading(false);
-    }, [initialTasks]);
+        const { data: existingBadge } = await supabase
+            .from('user_badges')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('badge_code', code)
+            .single();
+        
+        if (!existingBadge) {
+            const { error } = await supabase
+                .from('user_badges')
+                .insert({ user_id: userId, badge_code: code });
+            if (!error) {
+                toast({
+                    title: 'Badge Unlocked!',
+                    description: `You've earned the "${name}" badge!`,
+                    action: <Trophy className="h-5 w-5 text-yellow-500" />
+                });
+            }
+        }
+    };
 
-    const handleAddTask = async () => {
-        if (!userId || !newTaskText.trim()) return;
-        setIsLoading(true);
+    const handleAddTask = async (title: string, category: string = 'General') => {
+        if (!userId || !title.trim()) return;
+        setIsSubmitting(true);
 
         try {
-            // Logic to insert task into Supabase
-            setNewTaskText('');
-            // Refetch tasks
+            const { error } = await supabase
+                .from('tasks')
+                .insert({ user_id: userId, title, category });
+
+            if (error) throw error;
+            
+            toast({ title: 'Task Added!', description: `"${title}" has been added.` });
+            if (title === newTaskText) {
+                setNewTaskText('');
+            }
+            refetchTasks();
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
-        setIsLoading(false);
+        setIsSubmitting(false);
     };
 
     const handleAddSuggestedTask = async (task: SuggestedTask) => {
@@ -49,39 +77,47 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
             toast({ title: 'Task Added!', description: `(Guest) "${task.title}" has been added to your list.` });
             return;
         }
-        
+        await handleAddTask(task.title, task.category);
+    };
+
+    const handleToggleTask = async (taskId: number, isCompleted: boolean) => {
+        if (!userId) return;
+
         try {
-            // Logic to insert task into Supabase
-            toast({ title: "Task Added!", description: `"${task.title}" has been added to your list.` });
-            // Refetch tasks
+            const { error } = await supabase
+                .from('tasks')
+                .update({ is_completed: isCompleted })
+                .eq('id', taskId);
+
+            if (error) throw error;
+            
+            if (isCompleted) {
+                await awardBadge('starter_tasker', 'Starter Tasker');
+            }
+
+            refetchTasks();
         } catch(error: any) {
-            toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
+             toast({ variant: 'destructive', title: 'Error updating task', description: error.message });
         }
     };
 
-    const handleToggleTask = async (taskId: string, isCompleted: boolean) => {
+    const handleDeleteTask = async (taskId: number) => {
         if (!userId) return;
 
         try {
-            // Logic to update task in Supabase
-            // Refetch tasks
-        } catch(error) {
-             toast({ variant: 'destructive', title: 'Error updating task' });
-        }
-    };
-
-    const handleDeleteTask = async (taskId: string) => {
-        if (!userId) return;
-
-        try {
-            // Logic to delete task from Supabase
-            // Refetch tasks
-        } catch (error) {
-            toast({ variant: 'destructive', title: 'Error deleting task' });
+            const { error } = await supabase
+                .from('tasks')
+                .delete()
+                .eq('id', taskId);
+            
+            if (error) throw error;
+            refetchTasks();
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Error deleting task', description: error.message });
         }
     };
     
-    const completedCount = tasks.filter(t => t.is_completed).length;
+    const completedCount = initialTasks.filter(t => t.is_completed).length;
 
   return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -102,7 +138,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
             <Card>
               <CardHeader>
                 <CardTitle>Today's Focus</CardTitle>
-                <CardDescription>{completedCount} of {tasks.length} tasks completed. Keep it up!</CardDescription>
+                <CardDescription>{completedCount} of {initialTasks.length} tasks completed. Keep it up!</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
@@ -110,31 +146,31 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
                     placeholder="Add a new task..." 
                     value={newTaskText} 
                     onChange={(e) => setNewTaskText(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddTask()}
-                    disabled={isLoading}
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddTask(newTaskText)}
+                    disabled={isSubmitting}
                     />
-                  <Button size="icon" onClick={handleAddTask} disabled={isLoading}><Plus /></Button>
+                  <Button size="icon" onClick={() => handleAddTask(newTaskText)} disabled={isSubmitting || !newTaskText.trim()}><Plus /></Button>
                 </div>
                 <div className="space-y-3">
                   {isLoading ? (
                     [...Array(3)].map((_,i) => <Skeleton key={i} className="h-12 w-full rounded-md" />)
                   ) : (
-                    tasks.map(task => (
-                      <div key={task._id} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
+                    initialTasks.map(task => (
+                      <div key={task.id} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
                         <div className="flex items-center gap-3">
-                           <Checkbox id={task._id} checked={task.is_completed} onCheckedChange={(checked) => handleToggleTask(task._id, !!checked)} />
-                           <label htmlFor={task._id} className="text-sm font-medium data-[done=true]:line-through data-[done=true]:text-muted-foreground" data-done={task.is_completed}>{task.title}</label>
+                           <Checkbox id={task.id.toString()} checked={task.is_completed} onCheckedChange={(checked) => handleToggleTask(task.id, !!checked)} />
+                           <label htmlFor={task.id.toString()} className="text-sm font-medium data-[done=true]:line-through data-[done=true]:text-muted-foreground" data-done={task.is_completed}>{task.title}</label>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline">{task.category}</Badge>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteTask(task._id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteTask(task.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>
                     ))
                   )}
-                  {!isLoading && tasks.length === 0 && (
+                  {!isLoading && initialTasks.length === 0 && (
                     <div className="text-center text-muted-foreground p-8">You have no tasks. Add one above!</div>
                   )}
                 </div>
@@ -144,7 +180,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
 
           <TabsContent value="suggested-tasks" className="mt-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {suggestedTasks.map(task => (
+              {initialSuggestedTasks.map(task => (
                 <Card key={task.id} className="flex flex-col">
                   <CardHeader>
                     <div className="flex justify-between items-center">
@@ -158,7 +194,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
                   </CardContent>
                 </Card>
               ))}
-              {suggestedTasks.length === 0 && (
+              {initialSuggestedTasks.length === 0 && (
                  <Card className="md:col-span-3">
                     <CardContent className="p-10 text-center text-muted-foreground">
                         No suggested tasks available right now.

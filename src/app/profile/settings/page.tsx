@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Bell, Download, Trash2, Moon, LogOut } from 'lucide-react';
+import { Bell, Download, Trash2, Moon, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile } from 'firebase/auth';
 import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/lib/supabase';
 
 
 type Preferences = {
@@ -22,11 +23,10 @@ type Preferences = {
 };
 
 type UserProfile = {
-  uid: string;
-  _id?: string;
-  email?: string;
-  name?: string;
-  photoURL?: string;
+  id: string;
+  email?: string | null;
+  name?: string | null;
+  photo_url?: string | null;
 };
 
 export default function SettingsPage() {
@@ -43,15 +43,20 @@ export default function SettingsPage() {
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
           if (currentUser) {
               setIsGuest(false);
-              // Fetch user profile and preferences from Supabase
-              // For now, using placeholder data
-              setUser({
-                  uid: currentUser.uid,
-                  email: currentUser.email || '',
-                  name: currentUser.displayName || '',
-                  photoURL: currentUser.photoURL || '',
-              });
-              setName(currentUser.displayName || '');
+              const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', currentUser.uid)
+                .single();
+
+              if (error) {
+                console.error("Error fetching profile", error);
+                setIsLoading(false);
+                return;
+              }
+
+              setUser(data);
+              setName(data.name || '');
               setPreferences({
                   darkMode: true,
                   notificationFrequency: 'daily',
@@ -60,7 +65,7 @@ export default function SettingsPage() {
               const guest = sessionStorage.getItem('isGuest') === 'true';
               setIsGuest(guest);
               if (guest) {
-                setUser({ uid: 'guest', name: 'Guest', email: 'guest@example.com' });
+                setUser({ id: 'guest', name: 'Guest', email: 'guest@example.com' });
                 setName('Guest');
               }
           }
@@ -73,7 +78,12 @@ export default function SettingsPage() {
     if (!user || isGuest || !auth.currentUser) return;
     try {
         await updateProfile(auth.currentUser, { displayName: name });
-        // Logic to update profile in Supabase
+        const { error } = await supabase
+            .from('profiles')
+            .update({ name, updated_at: new Date().toISOString() })
+            .eq('id', user.id);
+        
+        if (error) throw error;
         toast({ title: 'Profile Updated!' });
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Update failed', description: error.message});
@@ -145,7 +155,7 @@ export default function SettingsPage() {
             <CardContent className="space-y-4 pt-6">
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarImage src={user?.photoURL || undefined} data-ai-hint="profile avatar" />
+                  <AvatarImage src={user?.photo_url || undefined} data-ai-hint="profile avatar" />
                   <AvatarFallback>{user?.name?.[0]?.toUpperCase() || 'G'}</AvatarFallback>
                 </Avatar>
                 <Button variant="outline" disabled>Change Photo</Button>

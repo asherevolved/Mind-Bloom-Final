@@ -11,6 +11,8 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
 import { getAiTip } from '@/ai/flows/dashboard-tip';
 import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/lib/supabase';
+import { isToday } from 'date-fns';
 
 type DashboardData = {
     name: string;
@@ -33,7 +35,7 @@ export default function DashboardPage() {
             if (user) {
                 setUserId(user.uid);
             } else {
-                setIsLoading(false); // No user, stop loading
+                setIsLoading(false);
             }
         });
         return () => unsubscribe();
@@ -43,25 +45,79 @@ export default function DashboardPage() {
         if (userId) {
             const processData = async () => {
                 setIsLoading(true);
-                // In a real app, you would fetch all this data from Supabase
-                // For now, we'll use placeholder data.
                 
-                const tip = await getAiTip({
-                    onboardingGoals: ['Anxiety', 'Focus'],
-                    recentMood: 'feeling okay',
-                });
+                try {
+                    const { data: profileData, error: profileError } = await supabase
+                        .from('profiles')
+                        .select('name, onboarding_complete, support_tags')
+                        .eq('id', userId)
+                        .single();
 
-                setData({
-                    name: auth.currentUser?.displayName || 'Explorer',
-                    moodLogged: true,
-                    tasksLeft: 2,
-                    totalTasks: 5,
-                    badgesUnlocked: 3,
-                    lastJournalEntry: "Today was a good day. I felt productive.",
-                    habitStreaks: [{ name: 'Meditate', streak: 5 }, { name: 'Read', streak: 12 }],
-                    aiTip: tip.tip,
-                });
-                setIsLoading(false);
+                    if (profileError) throw profileError;
+
+                    const { data: moodData, error: moodError } = await supabase
+                        .from('mood_logs')
+                        .select('created_at', { count: 'exact', head: true })
+                        .eq('user_id', userId);
+                    
+                    if (moodError) throw moodError;
+
+                    const lastMood = moodData ? new Date(moodData[0]?.created_at) : null;
+                    const moodLoggedToday = lastMood ? isToday(lastMood) : false;
+
+                    const { data: tasksData, error: tasksError } = await supabase
+                        .from('tasks')
+                        .select('is_completed', { count: 'exact' })
+                        .eq('user_id', userId);
+
+                    if (tasksError) throw tasksError;
+
+                    const { count: badgesCount, error: badgesError } = await supabase
+                        .from('user_badges')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('user_id', userId);
+                    
+                    if (badgesError) throw badgesError;
+
+                    const { data: journalData, error: journalError } = await supabase
+                        .from('journal_entries')
+                        .select('entry')
+                        .eq('user_id', userId)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+
+                    if (journalError) throw journalError;
+
+                    const { data: habitsData, error: habitsError } = await supabase
+                        .from('habits')
+                        .select('title, streak_count')
+                        .eq('user_id', userId)
+                        .order('streak_count', { ascending: false })
+                        .limit(2);
+
+                    if (habitsError) throw habitsError;
+                    
+                    const tip = await getAiTip({
+                        onboardingGoals: profileData.support_tags || [],
+                        recentMood: moodData?.[0]?.note || 'neutral',
+                    });
+
+                    setData({
+                        name: profileData.name || auth.currentUser?.displayName || 'Explorer',
+                        moodLogged: moodLoggedToday,
+                        tasksLeft: tasksData?.filter(t => !t.is_completed).length || 0,
+                        totalTasks: tasksData?.length || 0,
+                        badgesUnlocked: badgesCount || 0,
+                        lastJournalEntry: journalData?.[0]?.entry || null,
+                        habitStreaks: habitsData?.map(h => ({ name: h.title, streak: h.streak_count })) || [],
+                        aiTip: tip.tip,
+                    });
+
+                } catch (error) {
+                    console.error("Error fetching dashboard data:", error);
+                } finally {
+                    setIsLoading(false);
+                }
             };
             processData();
         }

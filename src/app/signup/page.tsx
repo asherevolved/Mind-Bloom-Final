@@ -11,6 +11,7 @@ import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { supabase } from '@/lib/supabase';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -32,8 +33,15 @@ export default function SignupPage() {
         // Update Firebase Auth profile
         await updateProfile(user, { displayName: name });
         try {
-            // Logic to insert new user profile into Supabase
-            // This would typically include the user.uid, name, and email.
+            // The handle_new_user trigger in Supabase should have already created a profile.
+            // We just need to update it with the name.
+            const { error: updateError } = await supabase
+              .from('profiles')
+              .update({ name: name, updated_at: new Date().toISOString() })
+              .eq('id', user.uid);
+
+            if (updateError) throw updateError;
+
         } catch (dbError: any) {
             toast({ variant: 'destructive', title: 'Database Error', description: `User created, but failed to save profile: ${dbError.message}` });
             setIsLoading(false);

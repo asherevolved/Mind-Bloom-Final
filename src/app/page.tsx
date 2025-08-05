@@ -11,6 +11,7 @@ import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -29,11 +30,17 @@ export default function LoginPage() {
       const user = userCredential.user;
 
       if (user) {
-        // In a Supabase app, you'd check a 'profiles' table.
-        // For now, we'll assume a new user always goes to onboarding.
-        const isOnboardingComplete = false; // Replace with actual check
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('onboarding_complete')
+          .eq('id', user.uid)
+          .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116: row not found
+          throw error;
+        }
         
-        if (isOnboardingComplete) {
+        if (data?.onboarding_complete) {
           router.push('/dashboard');
         } else {
           router.push('/onboarding');
@@ -61,11 +68,17 @@ export default function LoginPage() {
       const user = result.user;
 
       if (user) {
-        // Logic to check if user exists in Supabase and redirect
-        // to onboarding or dashboard.
-        const isOnboardingComplete = false; // Replace with actual check
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('onboarding_complete')
+          .eq('id', user.uid)
+          .single();
+        
+        if (error && error.code !== 'PGRST116') {
+            throw error;
+        }
 
-        if (isOnboardingComplete) {
+        if (data?.onboarding_complete) {
           router.push('/dashboard');
         } else {
           router.push('/onboarding');

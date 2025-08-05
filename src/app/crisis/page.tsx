@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 
 
 export default function CrisisPage() {
@@ -29,16 +30,25 @@ export default function CrisisPage() {
         if (!userId) return;
 
         const badgeCode = 'help_seeker';
-        // Logic to check if badge exists in Supabase and award if not
-        const hasBadge = false; // Replace with actual check
+        
+        const { data: existingBadge } = await supabase
+            .from('user_badges')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('badge_code', badgeCode)
+            .single();
 
-        if (!hasBadge) {
-            // Logic to award badge in Supabase
-            toast({
-                title: 'Badge Unlocked!',
-                description: `You've earned the "Help Seeker" badge. It's okay to ask for help.`,
-                action: <Trophy className="h-5 w-5 text-yellow-500" />
-            });
+        if (!existingBadge) {
+            const { error } = await supabase
+                .from('user_badges')
+                .insert({ user_id: userId, badge_code: badgeCode });
+            if (!error) {
+                toast({
+                    title: 'Badge Unlocked!',
+                    description: `You've earned the "Help Seeker" badge. It's okay to ask for help.`,
+                    action: <Trophy className="h-5 w-5 text-yellow-500" />
+                });
+            }
         }
     };
 

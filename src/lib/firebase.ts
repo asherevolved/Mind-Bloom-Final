@@ -4,13 +4,12 @@ import { getAuth } from 'firebase/auth';
 
 
 const firebaseConfig = {
-  apiKey: "AIzaSyD5lES72nwynLNFdaYog6lxVxrw_Lm72pI",
-  authDomain: "mind-bloom-vdm4y.firebaseapp.com",
-  databaseURL: "https://mind-bloom-vdm4y.firebaseio.com",
-  projectId: "mind-bloom-vdm4y",
-  storageBucket: "mind-bloom-vdm4y.firebasestorage.app",
-  messagingSenderId: "387530632714",
-  appId: "1:387530632714:web:f2f49dc8454a9a3fa8b9f3"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 

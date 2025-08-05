@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Mic, MicOff, Send, PhoneOff, User, Volume2 } from 'lucide-react';
+import { Bot, Mic, MicOff, Send, PhoneOff, User, Volume2, Trophy } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { therapistChat } from '@/ai/flows/therapist-chat';
 import { useToast } from '@/hooks/use-toast';
@@ -23,6 +23,7 @@ import {
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { textToSpeech } from '@/ai/flows/text-to-speech';
+import { supabase } from '@/lib/supabase';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -46,9 +47,12 @@ export default function ChatPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUserId(user.uid);
-        // Fetch user data (including therapyTone) from Supabase
-        // For now, we'll set a default
-        setTherapyTone('Reflective Listener');
+        const { data } = await supabase
+            .from('profiles')
+            .select('therapy_tone')
+            .eq('id', user.uid)
+            .single();
+        setTherapyTone(data?.therapy_tone || 'Reflective Listener');
       } else {
         const isGuest = sessionStorage.getItem('isGuest') === 'true';
         if (!isGuest) {
@@ -66,9 +70,39 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+  
+  const awardBadge = async (code: string, name: string) => {
+    if (!userId || userId === 'guest') return;
+
+    const { data: existingBadge } = await supabase
+        .from('user_badges')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('badge_code', code)
+        .single();
+    
+    if (!existingBadge) {
+        const { error } = await supabase
+            .from('user_badges')
+            .insert({ user_id: userId, badge_code: code });
+
+        if (!error) {
+            toast({
+                title: 'Badge Unlocked!',
+                description: `You've earned the "${name}" badge!`,
+                action: <Trophy className="h-5 w-5 text-yellow-500" />
+            });
+        }
+    }
+  }
+
 
   const handleSend = async () => {
     if (input.trim()) {
+      if (messages.length === 0) {
+        awardBadge('therapy_starter', 'Therapy Starter');
+      }
+
       const newUserMessage: Message = { role: 'user', content: input };
       const newMessages = [...messages, newUserMessage];
       setMessages(newMessages);
@@ -86,6 +120,7 @@ export default function ChatPage() {
         if(isVoiceMode) {
           const audioResponse = await textToSpeech({ text: response.response });
           audioUrl = audioResponse;
+          awardBadge('conversationalist', 'Conversationalist');
         }
 
         const aiMessage: Message = { role: 'assistant', content: response.response, audioUrl };
@@ -123,23 +158,8 @@ export default function ChatPage() {
       return;
     }
     
-    // Save session data to sessionStorage to be picked up by the analysis page.
-    // In a real app with Supabase, you might save this to the DB and pass an ID.
     sessionStorage.setItem('sessionData', JSON.stringify({ messages }));
-
-    if (userId && userId !== 'guest') {
-        try {
-            // Here you would insert the session into Supabase and get an ID
-            const sessionId = `session_${Date.now()}`; // Placeholder ID
-            sessionStorage.setItem('sessionId', sessionId);
-            router.push('/analysis');
-        } catch (error: any) {
-            toast({ variant: 'destructive', title: 'Error Saving Session', description: error.message });
-        }
-    } else {
-        // Handle guest mode
-        router.push('/analysis');
-    }
+    router.push('/analysis');
   };
 
   const playAudio = (audioUrl: string) => {

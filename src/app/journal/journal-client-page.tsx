@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,25 +16,46 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { JournalEntry } from './page';
+import { supabase } from '@/lib/supabase';
 
 interface JournalClientPageProps {
     initialEntries: JournalEntry[];
     userId: string | null;
+    isLoading: boolean;
+    refetchEntries: () => void;
 }
 
-export function JournalClientPage({ initialEntries, userId }: JournalClientPageProps) {
+export function JournalClientPage({ initialEntries, userId, isLoading, refetchEntries }: JournalClientPageProps) {
   const [title, setTitle] = useState('');
   const [moodTag, setMoodTag] = useState('');
   const [entry, setEntry] = useState('');
-  const [pastEntries, setPastEntries] = useState<JournalEntry[]>(initialEntries);
-  const [isLoading, setIsLoading] = useState(!initialEntries);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   
-  
-  useEffect(() => {
-    setPastEntries(initialEntries);
-    if(initialEntries) setIsLoading(false);
-  }, [initialEntries]);
+  const awardBadge = async (code: string, name: string) => {
+    if (!userId) return;
+
+    const { data: existingBadge } = await supabase
+        .from('user_badges')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('badge_code', code)
+        .single();
+    
+    if (!existingBadge) {
+        const { error } = await supabase
+            .from('user_badges')
+            .insert({ user_id: userId, badge_code: code });
+
+        if (!error) {
+            toast({
+                title: 'Badge Unlocked!',
+                description: `You've earned the "${name}" badge!`,
+                action: <Trophy className="h-5 w-5 text-yellow-500" />
+            });
+        }
+    }
+  }
 
   const handleSaveEntry = async () => {
     if (!userId) {
@@ -46,44 +67,28 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
         return;
     }
     
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
-        // Logic to save entry to Supabase
+        const { error } = await supabase.from('journal_entries').insert({
+            user_id: userId,
+            title,
+            entry,
+            mood_tag: moodTag || null
+        });
+
+        if (error) throw error;
         
         toast({ title: 'Entry Saved!', description: 'Your journal has been updated.'});
         setTitle('');
         setMoodTag('');
         setEntry('');
-        await checkBadges();
-        // Refetch entries
+        await awardBadge('thought_starter', 'Thought Starter');
+        refetchEntries();
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Error saving entry', description: error.message});
     }
-    setIsLoading(false);
+    setIsSubmitting(false);
   }
-  
-  const checkBadges = async () => {
-      if (!userId) return;
-
-      const badgeCode = 'thought_starter';
-      // Logic to check for badge in Supabase and award if needed
-  }
-
-  const awardBadge = async (code: string, name: string) => {
-    if (!userId) return;
-    try {
-        // Logic to save badge to Supabase
-        toast({
-            title: 'Badge Unlocked!',
-            description: `You've earned the "${name}" badge!`,
-            action: <Trophy className="h-5 w-5 text-yellow-500" />
-        });
-
-    } catch (error: any) {
-        console.error("Failed to award badge", error);
-    }
-  }
-
 
   return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -98,14 +103,14 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
             <CardDescription>What's on your mind today?</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input placeholder="Entry Title" value={title} onChange={e => setTitle(e.target.value)} disabled={isLoading} />
+            <Input placeholder="Entry Title" value={title} onChange={e => setTitle(e.target.value)} disabled={isSubmitting} />
             <div className="relative">
               <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Mood Tag (e.g., Happy, Reflective)" className="pl-9" value={moodTag} onChange={e => setMoodTag(e.target.value)} disabled={isLoading} />
+              <Input placeholder="Mood Tag (e.g., Happy, Reflective)" className="pl-9" value={moodTag} onChange={e => setMoodTag(e.target.value)} disabled={isSubmitting} />
             </div>
-            <Textarea placeholder="Write your thoughts here..." rows={6} value={entry} onChange={e => setEntry(e.target.value)} disabled={isLoading} />
-            <Button className="w-full" onClick={handleSaveEntry} disabled={isLoading}>
-                {isLoading ? 'Saving...' : 'Save Entry'}
+            <Textarea placeholder="Write your thoughts here..." rows={6} value={entry} onChange={e => setEntry(e.target.value)} disabled={isSubmitting} />
+            <Button className="w-full" onClick={handleSaveEntry} disabled={isSubmitting}>
+                {isSubmitting ? 'Saving...' : 'Save Entry'}
             </Button>
           </CardContent>
         </Card>
@@ -119,18 +124,18 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
               </div>
           ) : (
             <Accordion type="single" collapsible className="w-full space-y-2">
-                {pastEntries.map(entry => (
-                <AccordionItem key={entry._id} value={`item-${entry._id}`} className="border-b-0">
+                {initialEntries.map(entry => (
+                <AccordionItem key={entry.id} value={`item-${entry.id}`} className="border-b-0">
                     <Card>
                     <AccordionTrigger className="p-4 hover:no-underline">
                         <div className="flex-1 text-left">
                         <div className="flex justify-between items-center">
                             <h3 className="font-semibold text-foreground">{entry.title}</h3>
-                            <p className="text-xs text-muted-foreground hidden sm:block">{new Date(entry.createdAt).toLocaleDateString()}</p>
+                            <p className="text-xs text-muted-foreground hidden sm:block">{new Date(entry.created_at).toLocaleDateString()}</p>
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                             {entry.mood_tag && <Badge variant="secondary">{entry.mood_tag}</Badge>}
-                            <p className="text-xs text-muted-foreground sm:hidden">{new Date(entry.createdAt).toLocaleDateString()}</p>
+                            <p className="text-xs text-muted-foreground sm:hidden">{new Date(entry.created_at).toLocaleDateString()}</p>
                         </div>
                         </div>
                     </AccordionTrigger>
@@ -142,7 +147,7 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
                 ))}
             </Accordion>
           )}
-           {!isLoading && pastEntries.length === 0 && (
+           {!isLoading && initialEntries.length === 0 && (
                 <Card>
                     <CardContent className="p-10 text-center text-muted-foreground">
                         You haven't written any journal entries yet.

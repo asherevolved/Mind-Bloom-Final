@@ -3,70 +3,95 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Check, Flame, Plus } from 'lucide-react';
+import { Check, Flame, Plus, Trophy } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { isToday, subDays } from 'date-fns';
+import { isToday, isYesterday } from 'date-fns';
+import type { Habit } from './page';
+import { supabase } from '@/lib/supabase';
 
-const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-type Habit = {
-  _id: string;
-  title: string;
-  category: string;
-  streak_count: number;
-  last_completed: string | null;
-  userId: string;
-};
 
 interface HabitsClientPageProps {
     initialHabits: Habit[];
     userId: string | null;
+    isLoading: boolean;
+    refetchHabits: () => void;
 }
 
-export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProps) {
-  const [habits, setHabits] = useState<Habit[]>(initialHabits);
+export function HabitsClientPage({ initialHabits, userId, isLoading, refetchHabits }: HabitsClientPageProps) {
   const [newHabitTitle, setNewHabitTitle] = useState('');
-  const [isLoading, setIsLoading] = useState(!initialHabits);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
+  const awardBadge = async (code: string, name: string) => {
+    if (!userId) return;
 
-  useEffect(() => {
-    setHabits(initialHabits);
-    if(initialHabits) setIsLoading(false);
-  }, [initialHabits]);
+    const { data: existingBadge } = await supabase
+        .from('user_badges')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('badge_code', code)
+        .single();
+    
+    if (!existingBadge) {
+        const { error } = await supabase
+            .from('user_badges')
+            .insert({ user_id: userId, badge_code: code });
+        if (!error) {
+            toast({
+                title: 'Badge Unlocked!',
+                description: `You've earned the "${name}" badge!`,
+                action: <Trophy className="h-5 w-5 text-yellow-500" />
+            });
+        }
+    }
+  }
 
   const handleAddHabit = async () => {
     if (!userId || !newHabitTitle.trim()) return;
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
-        // Logic to insert habit into Supabase
+        const { error } = await supabase.from('habits').insert({
+            user_id: userId,
+            title: newHabitTitle,
+            category: 'General'
+        });
         
+        if (error) throw error;
+        
+        await awardBadge('habit_initiator', 'Habit Initiator');
         setNewHabitTitle('');
         toast({ title: 'Habit Added!', description: `You're now tracking "${newHabitTitle}".` });
-        // Refetch habits after adding
+        refetchHabits();
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Error adding habit', description: error.message });
     }
-    setIsLoading(false);
+    setIsSubmitting(false);
   };
 
   const handleMarkAsDone = async (habit: Habit) => {
       if (!userId) return;
       if (habit.last_completed && isToday(new Date(habit.last_completed))) return;
 
-      const newStreak = (habit.last_completed && isToday(subDays(new Date(), 1))) 
+      const today = new Date();
+      const newStreak = (habit.last_completed && isYesterday(new Date(habit.last_completed))) 
           ? (habit.streak_count || 0) + 1 
           : 1;
 
-      const newLastCompleted = new Date().toISOString();
-      
       try {
-        // Logic to update habit in Supabase
-        // Refetch habits after updating
+        const { error } = await supabase
+            .from('habits')
+            .update({ streak_count: newStreak, last_completed: today.toISOString().split('T')[0] })
+            .eq('id', habit.id);
+        
+        if (error) throw error;
+        
+        refetchHabits();
       } catch (error: any) {
           toast({ variant: 'destructive', title: 'Error updating habit', description: error.message });
       }
@@ -91,9 +116,9 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
                 value={newHabitTitle} 
                 onChange={e => setNewHabitTitle(e.target.value)} 
                 onKeyPress={e => e.key === 'Enter' && handleAddHabit()}
-                disabled={isLoading}
+                disabled={isSubmitting}
                 />
-              <Button onClick={handleAddHabit} disabled={isLoading}><Plus className="mr-2 h-4 w-4" /> Add Habit</Button>
+              <Button onClick={handleAddHabit} disabled={isSubmitting}><Plus className="mr-2 h-4 w-4" /> Add Habit</Button>
             </div>
           </CardContent>
         </Card>
@@ -102,10 +127,10 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
           {isLoading ? (
             [...Array(2)].map((_,i) => <Skeleton key={i} className="h-40 w-full" />)
           ) : (
-            habits.map((habit) => {
+            initialHabits.map((habit) => {
                 const completedToday = habit.last_completed ? isToday(new Date(habit.last_completed)) : false;
                 return (
-                    <Card key={habit._id}>
+                    <Card key={habit.id}>
                     <CardHeader>
                         <div className="flex justify-between items-start">
                         <div>
@@ -129,19 +154,24 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
                             <div className="text-xs text-muted-foreground">Current Streak</div>
                             </div>
                         </div>
-                        {/* A full calendar implementation is complex, so this is a simplified visual */}
                         <div className="flex-1 rounded-md border p-3">
                             <div className="grid grid-cols-7 gap-2 text-center">
                             {daysOfWeek.map((day) => (
                                 <div key={day} className="text-xs text-muted-foreground">{day}</div>
                             ))}
-                            {[...Array(7)].map((_, dayIndex) => (
+                            {[...Array(7)].map((_, dayIndex) => {
+                                const dayDate = new Date();
+                                dayDate.setDate(dayDate.getDate() - (dayDate.getDay() - dayIndex));
+                                const isCompleted = habit.last_completed ? new Date(habit.last_completed) >= dayDate && habit.streak_count > 0: false;
+
+                                return (
                                 <div key={dayIndex} className={cn(
-                                "w-full aspect-square rounded-md flex items-center justify-center bg-muted/50"
+                                    "w-full aspect-square rounded-md flex items-center justify-center bg-muted/50",
+                                    {"bg-green-200": isCompleted}
                                 )}>
-                                {dayIndex < (new Date().getDay() + 6) % 7 && habit.streak_count > ((new Date().getDay() + 6) % 7 - dayIndex -1) && <Check className="h-4 w-4 text-green-500"/>}
+                                {isCompleted && <Check className="h-4 w-4 text-green-700"/>}
                                 </div>
-                            ))}
+                            )})}
                             </div>
                         </div>
                         </div>
@@ -150,7 +180,7 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
                 )
             })
           )}
-           {!isLoading && habits.length === 0 && (
+           {!isLoading && initialHabits.length === 0 && (
               <Card>
                   <CardContent className="p-10 text-center text-muted-foreground">
                       You haven't added any habits yet.

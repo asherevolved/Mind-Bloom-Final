@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MoodLog } from './page';
+import { supabase } from '@/lib/supabase';
 
 const moodIcons = [
   { icon: Angry, color: 'text-red-400' },
@@ -27,62 +28,71 @@ const moodTags = ['Anxious', 'Happy', 'Grateful', 'Tired', 'Stressed', 'Producti
 interface MoodClientPageProps {
     initialMoods: MoodLog[];
     userId: string | null;
+    isLoading: boolean;
+    refetchMoods: () => void;
 }
 
-export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
+export function MoodClientPage({ initialMoods, userId, isLoading, refetchMoods }: MoodClientPageProps) {
   const [mood, setMood] = useState([5]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [note, setNote] = useState('');
-  const [pastMoods, setPastMoods] = useState<MoodLog[]>(initialMoods);
-  const [isLoading, setIsLoading] = useState(!initialMoods);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    setPastMoods(initialMoods);
-    if(initialMoods) setIsLoading(false);
-  }, [initialMoods]);
+  const awardBadge = async (code: string, name: string) => {
+    if (!userId) return;
+
+    const { data: existingBadge } = await supabase
+        .from('user_badges')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('badge_code', code)
+        .single();
+    
+    if (!existingBadge) {
+        const { error } = await supabase
+            .from('user_badges')
+            .insert({ user_id: userId, badge_code: code });
+        if (!error) {
+            toast({
+                title: 'Badge Unlocked!',
+                description: `You've earned the "${name}" badge!`,
+                action: <Trophy className="h-5 w-5 text-yellow-500" />
+            });
+        }
+    }
+  };
 
   const handleLogMood = async () => {
     if (!userId) {
       toast({ variant: 'destructive', title: 'You must be logged in to log your mood.' });
       return;
     }
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
-      // Logic to insert mood log into Supabase
+      const { error } = await supabase.from('mood_logs').insert({
+        user_id: userId,
+        mood_score: mood[0],
+        tags: selectedTags,
+        note: note
+      });
+
+      if (error) throw error;
       
       toast({ title: 'Mood Logged!', description: 'Your mood has been saved.' });
       setMood([5]);
       setSelectedTags([]);
       setNote('');
-      await checkBadges();
-      // Refetch moods
+      await awardBadge('mood_starter', 'Mood Starter');
+      // Potentially award streaker badge
+      // This logic can be complex and might be better in a Supabase function
+      refetchMoods();
     } catch(error: any) {
       toast({ variant: 'destructive', title: 'Error logging mood', description: error.message });
     }
-    setIsLoading(false);
+    setIsSubmitting(false);
   };
   
-  const checkBadges = async () => {
-      if (!userId) return;
-
-      // Logic to check for and award badges would go here, interacting with Supabase
-  }
-
-  const awardBadge = async (code: string, name: string) => {
-    if (!userId) return;
-    try {
-        // Logic to insert badge record into Supabase
-        toast({
-            title: 'Badge Unlocked!',
-            description: `You've earned the "${name}" badge!`,
-            action: <Trophy className="h-5 w-5 text-yellow-500" />
-        });
-    } catch(error) {
-      // Fail silently
-    }
-  }
-
   const CurrentMoodIcon = moodIcons[Math.floor((mood[0] / 10) * (moodIcons.length - 1))];
 
   const toggleTag = (tag: string) => {
@@ -105,25 +115,25 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
           <CardContent className="space-y-6">
             <div className="flex flex-col items-center gap-4">
               <CurrentMoodIcon.icon className={cn("w-20 h-20 transition-colors", CurrentMoodIcon.color)} />
-              <Slider value={mood} onValueChange={setMood} max={10} step={1} disabled={isLoading}/>
+              <Slider value={mood} onValueChange={setMood} max={10} step={1} disabled={isSubmitting}/>
             </div>
             
             <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Tag className="w-4 h-4"/> <span>Add tags (optional)</span></div>
                 <div className="flex flex-wrap gap-2">
                     {moodTags.map(tag => (
-                        <Button key={tag} variant={selectedTags.includes(tag) ? "default" : "outline"} size="sm" onClick={() => toggleTag(tag)} disabled={isLoading}>{tag}</Button>
+                        <Button key={tag} variant={selectedTags.includes(tag) ? "default" : "outline"} size="sm" onClick={() => toggleTag(tag)} disabled={isSubmitting}>{tag}</Button>
                     ))}
                 </div>
             </div>
 
             <div className="space-y-2">
                 <label htmlFor="notes" className="text-sm font-medium text-muted-foreground">Add a note (optional)</label>
-                <Textarea id="notes" placeholder="What's on your mind?" value={note} onChange={(e) => setNote(e.target.value)} disabled={isLoading} />
+                <Textarea id="notes" placeholder="What's on your mind?" value={note} onChange={(e) => setNote(e.target.value)} disabled={isSubmitting} />
             </div>
 
-            <Button className="w-full" onClick={handleLogMood} disabled={isLoading}>
-                {isLoading ? 'Logging...' : 'Log Mood'}
+            <Button className="w-full" onClick={handleLogMood} disabled={isSubmitting}>
+                {isSubmitting ? 'Logging...' : 'Log Mood'}
             </Button>
           </CardContent>
         </Card>
@@ -138,15 +148,15 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
                 </div>
               ) : (
               <ul className="divide-y divide-border">
-                {pastMoods.map(log => {
+                {initialMoods.map(log => {
                   const LogIcon = moodIcons[Math.floor((log.mood_score / 10) * (moodIcons.length - 1))];
                   return (
-                    <li key={log._id} className="p-4 flex items-start gap-4">
+                    <li key={log.id} className="p-4 flex items-start gap-4">
                       <LogIcon.icon className={cn("w-10 h-10 mt-1 shrink-0", LogIcon.color)} />
                       <div className="flex-grow">
                         <div className="flex justify-between items-start">
                            <p className="font-semibold text-foreground">Mood level: {log.mood_score}/10</p>
-                           <p className="text-xs text-muted-foreground">{new Date(log.createdAt).toLocaleDateString()}</p>
+                           <p className="text-xs text-muted-foreground">{new Date(log.created_at).toLocaleDateString()}</p>
                         </div>
                         {log.note && <p className="text-sm text-muted-foreground italic">"{log.note}"</p>}
                         <div className="mt-2 flex flex-wrap gap-1">
@@ -158,7 +168,7 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
                 })}
               </ul>
               )}
-               {!isLoading && pastMoods.length === 0 && (
+               {!isLoading && initialMoods.length === 0 && (
                   <Card>
                       <CardContent className="p-10 text-center text-muted-foreground">
                           You haven't logged your mood yet.

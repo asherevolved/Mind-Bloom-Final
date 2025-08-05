@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
+import { supabase } from '@/lib/supabase';
 
 const totalSteps = 4;
 
@@ -79,12 +80,17 @@ export default function OnboardingPage() {
   };
   
   const awardBadge = async (currentUserId: string, code: string, name: string) => {
-    // Badge awarding logic with Supabase would go here
-    toast({
-        title: 'Badge Unlocked!',
-        description: `You've earned the "${name}" badge!`,
-        action: <Trophy className="h-5 w-5 text-yellow-500" />
-    });
+    const { error } = await supabase
+        .from('user_badges')
+        .insert({ user_id: currentUserId, badge_code: code });
+
+    if (!error) {
+        toast({
+            title: 'Badge Unlocked!',
+            description: `You've earned the "${name}" badge!`,
+            action: <Trophy className="h-5 w-5 text-yellow-500" />
+        });
+    }
   }
 
   const handleFinish = async () => {
@@ -107,9 +113,15 @@ export default function OnboardingPage() {
             support_tags: supportTags,
             therapy_tone: therapyTone,
             onboarding_complete: true,
+            updated_at: new Date().toISOString(),
         };
         
-        // Logic to update user profile in Supabase
+        const { error } = await supabase
+            .from('profiles')
+            .update(onboardingData)
+            .eq('id', user.uid);
+        
+        if (error) throw error;
         
         await awardBadge(user.uid, 'welcome_explorer', 'Welcome Explorer');
 

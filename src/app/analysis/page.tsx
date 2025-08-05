@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { supabase } from '@/lib/supabase';
 
 
 export default function AnalysisPage() {
@@ -34,7 +35,7 @@ export default function AnalysisPage() {
         if (!guestSession) {
             router.push('/chat');
         } else {
-            setUserId('guest'); // Special id for guest
+            setUserId('guest');
         }
       }
     });
@@ -44,28 +45,40 @@ export default function AnalysisPage() {
   useEffect(() => {
     if (!userId) return;
 
+    const awardBadge = async (code: string, name: string) => {
+        if (!userId || userId === 'guest') return;
+
+        const { data: existingBadge } = await supabase
+            .from('user_badges')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('badge_code', code)
+            .single();
+        
+        if (!existingBadge) {
+            const { error } = await supabase
+                .from('user_badges')
+                .insert({ user_id: userId, badge_code: code });
+
+            if (!error) {
+                setHasAwardedBadge(true);
+                toast({
+                    title: 'Badge Unlocked!',
+                    description: `You've earned the "${name}" badge!`,
+                    action: <Trophy className="h-5 w-5 text-yellow-500" />
+                });
+            }
+        }
+    }
+
     const processSession = async () => {
-      const sessionId = sessionStorage.getItem('sessionId');
       let transcript = '';
       let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
-
-      // User data fetching logic would go here with Supabase
-      // For now, we'll use placeholder data
-
-      if (sessionId && userId && userId !== 'guest') {
-        // Session fetching logic would go here with Supabase
-        // For now, we'll rely on session storage
-        const guestSession = sessionStorage.getItem('sessionData');
-         if (guestSession) {
-            const messages = JSON.parse(guestSession).messages || [];
-            transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
-        }
-      } else {
-        const guestSession = sessionStorage.getItem('sessionData');
-        if (guestSession) {
-            const messages = JSON.parse(guestSession).messages || [];
-            transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
-        }
+      
+      const guestSession = sessionStorage.getItem('sessionData');
+      if (guestSession) {
+          const messages = JSON.parse(guestSession).messages || [];
+          transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
       }
 
       if (!transcript) {
@@ -73,14 +86,28 @@ export default function AnalysisPage() {
         setIsLoading(false);
         return;
       }
+      
+      if (userId && userId !== 'guest') {
+          const { data, error } = await supabase
+              .from('profiles')
+              .select('mood_baseline, support_tags, therapy_tone')
+              .eq('id', userId)
+              .single();
+          if (!error && data) {
+              onboardingData = {
+                  moodBaseline: data.mood_baseline,
+                  supportTags: data.support_tags,
+                  therapyTone: data.therapy_tone,
+              };
+          }
+      }
 
       try {
         const result = await analyzeSession({ transcript, onboardingData });
         setAnalysis(result);
 
-        if (userId && userId !== 'guest' && sessionId) {
-          // Analysis saving logic would go here with Supabase
-          // Badge awarding logic would go here with Supabase
+        if (userId && userId !== 'guest') {
+            await awardBadge('self_reflector', 'Self-Reflector');
         }
 
       } catch (err) {
@@ -89,13 +116,12 @@ export default function AnalysisPage() {
         setError(`Failed to analyze the session: ${errorMessage}`);
       } finally {
         setIsLoading(false);
-        sessionStorage.removeItem('sessionId');
         sessionStorage.removeItem('sessionData');
       }
     };
 
     processSession();
-  }, [userId, router]);
+  }, [userId, router, toast]);
 
 
   const handleAddTask = async (title: string) => {
@@ -104,7 +130,12 @@ export default function AnalysisPage() {
         return;
     }
     try {
-        // Add task logic with Supabase would go here
+        const { error } = await supabase
+            .from('tasks')
+            .insert({ user_id: userId, title, category: 'AI Suggested' });
+        
+        if (error) throw error;
+
         toast({
             title: 'Task Added!',
             description: `"${title}" has been added to your list. 💪`,

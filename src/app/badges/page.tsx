@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { supabase } from '@/lib/supabase';
 
 const allBadges = [
   { code: 'welcome_explorer', name: 'Welcome Explorer', icon: Star, criteria: 'Complete the onboarding flow' },
@@ -34,16 +35,27 @@ export default function BadgesPage() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if(user) {
             setUserId(user.uid);
-            // Fetch user badges from Supabase here
-            // For now, let's assume a few are unlocked
-            const unlockedCodes = ['welcome_explorer', 'mood_starter'];
-            const badgeStatus = allBadges.map(b => ({
-              ...b,
-              unlocked: unlockedCodes.includes(b.code),
-            }));
-            setBadges(badgeStatus);
+            try {
+                const { data: userBadges, error } = await supabase
+                    .from('user_badges')
+                    .select('badge_code')
+                    .eq('user_id', user.uid);
+                
+                if (error) throw error;
+                
+                const unlockedCodes = userBadges.map(b => b.badge_code);
+                const badgeStatus = allBadges.map(b => ({
+                  ...b,
+                  unlocked: unlockedCodes.includes(b.code),
+                }));
+                setBadges(badgeStatus);
+
+            } catch (error) {
+                console.error("Error fetching badges:", error);
+                const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
+                setBadges(badgeStatus);
+            }
         } else {
-            // Handle guest user - no badges
             const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
             setBadges(badgeStatus);
         }
