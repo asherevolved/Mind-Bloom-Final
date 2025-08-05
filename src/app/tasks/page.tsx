@@ -1,3 +1,4 @@
+
 'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
@@ -44,23 +45,38 @@ export default function TasksPage() {
     const fetchTasks = useCallback(async (uid: string) => {
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
-                .rpc('get_tasks_with_subtasks', { user_id_param: uid });
+            // Fetch main tasks
+            const { data: tasksData, error: tasksError } = await supabase
+                .from('tasks')
+                .select('*')
+                .eq('user_id', uid)
+                .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (tasksError) throw tasksError;
+
+            // Fetch all sub-tasks for the user
+            const { data: subTasksData, error: subTasksError } = await supabase
+                .from('sub_tasks')
+                .select('*')
+                .eq('user_id', uid);
             
-            const processedTasks = data.map((task: any) => {
-                const subTasks = task.sub_tasks || [];
-                const totalSubTasks = subTasks.length;
-                const completedSubTasks = subTasks.filter((st: SubTask) => st.is_completed).length;
+            if (subTasksError) throw subTasksError;
+
+            // Map sub-tasks to their parent tasks
+            const tasksWithSubtasks = tasksData.map(task => {
+                const subTasks = subTasksData.filter(st => st.task_id === task.id);
+                const isCompleted = subTasks.length > 0 
+                    ? subTasks.every(st => st.is_completed) 
+                    : task.is_completed;
+
                 return {
                     ...task,
                     sub_tasks: subTasks,
-                    is_completed: totalSubTasks > 0 ? completedSubTasks === totalSubTasks : task.is_completed
-                }
+                    is_completed: isCompleted,
+                };
             });
 
-            setUserTasks(processedTasks || []);
+            setUserTasks(tasksWithSubtasks || []);
         } catch (error) {
             console.error("Error fetching tasks:", error);
             setUserTasks([]);
