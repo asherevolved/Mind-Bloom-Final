@@ -31,11 +31,11 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     const users = useQuery(api.crud.list, userId ? { table: 'users' } : 'skip');
-    const moodLogs = useQuery(api.crud.list, userId ? { table: 'mood_logs' } : 'skip');
-    const tasks = useQuery(api.crud.list, userId ? { table: 'tasks' } : 'skip');
-    const badges = useQuery(api.crud.list, userId ? { table: 'badges' } : 'skip');
-    const journalEntries = useQuery(api.crud.list, userId ? { table: 'journal' } : 'skip');
-    const habits = useQuery(api.crud.list, userId ? { table: 'habits' } : 'skip');
+    const moodLogs = useQuery(api.crud.listByUser, userId ? { table: 'mood_logs', userId: userId } : 'skip');
+    const tasks = useQuery(api.crud.listByUser, userId ? { table: 'tasks', userId: userId } : 'skip');
+    const badges = useQuery(api.crud.listByUser, userId ? { table: 'badges', userId: userId } : 'skip');
+    const journalEntries = useQuery(api.crud.listByUser, userId ? { table: 'journal', userId: userId } : 'skip');
+    const habits = useQuery(api.crud.listByUser, userId ? { table: 'habits', userId: userId } : 'skip');
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -49,7 +49,7 @@ export default function DashboardPage() {
     }, []);
 
     useEffect(() => {
-        const areQueriesReady = users && moodLogs && tasks && badges && journalEntries && habits;
+        const areQueriesReady = users !== undefined && moodLogs !== undefined && tasks !== undefined && badges !== undefined && journalEntries !== undefined && habits !== undefined;
 
         if (userId && areQueriesReady) {
             const processData = async () => {
@@ -60,34 +60,29 @@ export default function DashboardPage() {
                 }
 
                 // Mood
-                const userMoodLogs: any[] = moodLogs.filter((log: any) => log.userId === userId);
-                userMoodLogs.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                moodLogs.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
-                const moodLogged = userMoodLogs.some((log: any) => new Date(log.createdAt) >= today);
+                const moodLogged = moodLogs.some((log: any) => new Date(log.createdAt) >= today);
                 
                 // Tasks
-                const userTasks: any[] = tasks.filter((task: any) => task.userId === userId);
-                const totalTasks = userTasks.length;
-                const completedTasks = userTasks.filter(task => task.is_completed).length;
+                const totalTasks = tasks.length;
+                const completedTasks = tasks.filter(task => task.is_completed).length;
                 const tasksLeft = totalTasks - completedTasks;
 
                 // Badges
-                const userBadges: any[] = badges.filter((badge: any) => badge.userId === userId);
-                const badgesUnlocked = userBadges.length;
+                const badgesUnlocked = badges.length;
                 
                 // Journal
-                const userJournalEntries: any[] = journalEntries.filter((entry: any) => entry.userId === userId);
-                userJournalEntries.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                const lastJournalEntry = userJournalEntries.length > 0 ? userJournalEntries[0].entry : null;
+                journalEntries.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                const lastJournalEntry = journalEntries.length > 0 ? journalEntries[0].entry : null;
                 
                 // Habits
-                const userHabits: any[] = habits.filter((habit: any) => habit.userId === userId);
-                userHabits.sort((a,b) => b.streak_count - a.streak_count);
-                const habitStreaks = userHabits.slice(0, 2).map(habit => ({ name: habit.title, streak: habit.streak_count }));
+                habits.sort((a,b) => b.streak_count - a.streak_count);
+                const habitStreaks = habits.slice(0, 2).map(habit => ({ name: habit.title, streak: habit.streak_count }));
                 
                 // AI Tip
-                const recentMoodNote = userMoodLogs.length > 0 ? userMoodLogs[0].note : 'feeling neutral';
+                const recentMoodNote = moodLogs.length > 0 ? moodLogs[0].note : 'feeling neutral';
                 const tip = await getAiTip({
                     onboardingGoals: currentUser?.supportTags || [],
                     recentMood: recentMoodNote,

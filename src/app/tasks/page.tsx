@@ -31,30 +31,21 @@ const suggestedTasksList: SuggestedTask[] = [
 
 export default function TasksPage() {
     const [userId, setUserId] = useState<string | null>(null);
-    const allTasks = useQuery(api.crud.list, userId ? { table: 'tasks' } : 'skip');
-    const [userTasks, setUserTasks] = useState([]);
+    const userTasks = useQuery(api.crud.listByUser, userId ? { table: 'tasks', userId } : 'skip');
     
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
-            } else {
-                setUserTasks([]);
             }
         });
         return () => unsubscribe();
     }, []);
 
-    useEffect(() => {
-        if(userId && allTasks) {
-            setUserTasks(allTasks.filter((t: any) => t.userId === userId));
-        }
-    }, [userId, allTasks]);
-
   return (
     <MainAppLayout>
         <TasksClientPage 
-            initialTasks={userTasks}
+            initialTasks={userTasks || []}
             initialSuggestedTasks={suggestedTasksList}
             userId={userId}
         />

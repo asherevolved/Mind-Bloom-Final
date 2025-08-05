@@ -19,32 +19,30 @@ export type JournalEntry = {
 
 export default function JournalPage() {
     const [userId, setUserId] = useState<string | null>(null);
-    const allEntries = useQuery(api.crud.list, userId ? { table: 'journal' } : 'skip');
-    const [userEntries, setUserEntries] = useState([]);
+    const userEntries = useQuery(api.crud.listByUser, userId ? { table: 'journal', userId } : 'skip');
+    const [sortedEntries, setSortedEntries] = useState<JournalEntry[]>([]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
             } else {
-                setUserEntries([]);
+                setSortedEntries([]);
             }
         });
         return () => unsubscribe();
     }, []);
 
     useEffect(() => {
-        if(userId && allEntries) {
-            const sortedEntries = allEntries
-                .filter((e: any) => e.userId === userId)
-                .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            setUserEntries(sortedEntries);
+        if(userEntries) {
+            const sorted = [...userEntries].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setSortedEntries(sorted as JournalEntry[]);
         }
-    }, [userId, allEntries]);
+    }, [userEntries]);
   
   return (
     <MainAppLayout>
-        <JournalClientPage initialEntries={userEntries} userId={userId} />
+        <JournalClientPage initialEntries={sortedEntries} userId={userId} />
     </MainAppLayout>
   );
 }

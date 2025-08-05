@@ -10,6 +10,18 @@ export const list = query({
   },
 });
 
+// Read a list for a specific user
+export const listByUser = query({
+    args: { table: v.string(), userId: v.string() },
+    handler: async ({ db }, { table, userId }) => {
+        return await db
+            .query(table as any)
+            .withIndex("by_userId", (q) => q.eq("userId", userId))
+            .collect();
+    },
+});
+
+
 // Read by id
 export const get = query({
   args: { table: v.string(), id: v.string() }, 

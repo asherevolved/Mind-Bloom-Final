@@ -20,32 +20,30 @@ export type MoodLog = {
 
 export default function MoodPage() {
   const [userId, setUserId] = useState<string | null>(null);
-  const allMoods = useQuery(api.crud.list, userId ? { table: 'mood_logs' } : 'skip');
-  const [userMoods, setUserMoods] = useState([]);
+  const userMoods = useQuery(api.crud.listByUser, userId ? { table: 'mood_logs', userId: userId } : 'skip');
+  const [sortedMoods, setSortedMoods] = useState<MoodLog[]>([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
             setUserId(user.uid);
         } else {
-            setUserMoods([]);
+            setSortedMoods([]);
         }
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if(userId && allMoods) {
-      const sortedMoods = allMoods
-        .filter((m: any) => m.userId === userId)
-        .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setUserMoods(sortedMoods);
+    if(userMoods) {
+      const sorted = [...userMoods].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setSortedMoods(sorted as MoodLog[]);
     }
-  }, [userId, allMoods]);
+  }, [userMoods]);
   
   return (
     <MainAppLayout>
-        <MoodClientPage initialMoods={userMoods} userId={userId} />
+        <MoodClientPage initialMoods={sortedMoods} userId={userId} />
     </MainAppLayout>
   );
 }

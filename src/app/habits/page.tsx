@@ -10,29 +10,20 @@ import { useEffect, useState } from 'react';
 
 export default function HabitsPage() {
     const [userId, setUserId] = useState<string | null>(null);
-    const allHabits = useQuery(api.crud.list, userId ? { table: 'habits' } : 'skip');
-    const [userHabits, setUserHabits] = useState([]);
+    const userHabits = useQuery(api.crud.listByUser, userId ? { table: 'habits', userId: userId } : 'skip');
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
-            } else {
-                setUserHabits([]);
             }
         });
         return () => unsubscribe();
     }, []);
-
-    useEffect(() => {
-        if(userId && allHabits) {
-            setUserHabits(allHabits.filter((h: any) => h.userId === userId));
-        }
-    }, [userId, allHabits]);
   
   return (
     <MainAppLayout>
-        <HabitsClientPage initialHabits={userHabits} userId={userId} />
+        <HabitsClientPage initialHabits={userHabits || []} userId={userId} />
     </MainAppLayout>
   );
 }
