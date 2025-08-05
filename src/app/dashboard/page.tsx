@@ -64,7 +64,7 @@ export default function DashboardPage() {
                     .limit(1),
                 supabase
                     .from('tasks')
-                    .select('is_completed')
+                    .select('*')
                     .eq('user_id', currentUser.id),
                 supabase
                     .from('user_badges')
@@ -78,9 +78,8 @@ export default function DashboardPage() {
                     .limit(1),
                 supabase
                     .from('habits')
-                    .select('title, streak_count')
+                    .select('*')
                     .eq('user_id', currentUser.id)
-                    .limit(5)
             ]);
 
             if (moodResult.error) throw moodResult.error;
