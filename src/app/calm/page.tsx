@@ -14,31 +14,35 @@ const sounds = [
 ]
 
 export default function CalmPage() {
-  const [activeSound, setActiveSound] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [activeSound, setActiveSound] = useState<string | null>(null);
 
   useEffect(() => {
-    // Create the audio element on the client side
+    // Initialize audio only once on the client side
     audioRef.current = new Audio();
     audioRef.current.loop = true;
 
-    // Cleanup audio element on component unmount
+    // Cleanup when component unmounts
     return () => {
-      audioRef.current?.pause();
-      audioRef.current = null;
-    }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
   }, []);
 
-  const playSound = (soundName: string, soundPath: string) => {
-    if (audioRef.current) {
-        if (activeSound === soundName) {
-          audioRef.current.pause();
-          setActiveSound(null);
-        } else {
-          audioRef.current.src = soundPath;
-          audioRef.current.play().catch(e => console.error("Error playing audio:", e));
-          setActiveSound(soundName);
-        }
+  const playSound = (soundPath: string) => {
+    if (!audioRef.current) return;
+
+    // If the same sound is clicked again, pause it and reset state
+    if (activeSound === soundPath) {
+      audioRef.current.pause();
+      setActiveSound(null);
+    } else {
+      // Otherwise, set the new sound and play it
+      audioRef.current.src = soundPath;
+      audioRef.current.play().catch(e => console.error("Error playing audio:", e));
+      setActiveSound(soundPath);
     }
   };
 
@@ -90,9 +94,9 @@ export default function CalmPage() {
               {sounds.map(sound => (
                 <Button 
                     key={sound.name}
-                    variant={activeSound === sound.name ? 'default' : 'outline'} 
+                    variant={activeSound === sound.path ? 'default' : 'outline'} 
                     className="h-20 flex-col gap-2"
-                    onClick={() => playSound(sound.name, sound.path)}
+                    onClick={() => playSound(sound.path)}
                 >
                     <sound.icon />
                     <span>{sound.name}</span>
