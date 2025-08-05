@@ -18,8 +18,9 @@ export type Task = {
   category: string;
   is_completed: boolean;
   user_id: string;
-  reminder_interval: number | null;
   sub_tasks: SubTask[];
+  task_datetime: string | null;
+  duration_minutes: number | null;
 };
 
 export type SuggestedTask = {

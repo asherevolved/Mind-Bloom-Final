@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Lightbulb, Plus, Trash2, Trophy, List, X, ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { Lightbulb, Plus, Trash2, Trophy, List, X, ChevronDown, ChevronUp, CalendarPlus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
@@ -35,7 +36,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newSubTasks, setNewSubTasks] = useState<{ title: string }[]>([]);
     const [newSubTaskInput, setNewSubTaskInput] = useState('');
-    const [newReminderInterval, setNewReminderInterval] = useState<number | null>(null);
+    const [newTaskDateTime, setNewTaskDateTime] = useState('');
+    const [newDuration, setNewDuration] = useState(30);
     
     const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
 
@@ -67,7 +69,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
         setNewTaskTitle('');
         setNewSubTasks([]);
         setNewSubTaskInput('');
-        setNewReminderInterval(null);
+        setNewTaskDateTime('');
+        setNewDuration(30);
     };
 
     const handleAddSubTask = () => {
@@ -95,7 +98,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                     user_id: userId, 
                     title: newTaskTitle, 
                     category: 'General', 
-                    reminder_interval: newReminderInterval,
+                    task_datetime: newTaskDateTime || null,
+                    duration_minutes: newDuration
                 })
                 .select('id')
                 .single();
@@ -122,6 +126,30 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
             toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
         setIsSubmitting(false);
+    };
+
+    const handleAddToCalendar = (task: Task) => {
+        if (!task.task_datetime) {
+            toast({ variant: 'destructive', title: 'No date set', description: 'This task does not have a date and time set.' });
+            return;
+        }
+
+        const baseUrl = "https://www.google.com/calendar/render?action=TEMPLATE";
+
+        const startDate = new Date(task.task_datetime);
+        const endDate = new Date(startDate.getTime() + (task.duration_minutes || 30) * 60000);
+        
+        // Format YYYYMMDDTHHMMSSZ
+        const formatDate = (date: Date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+        const text = encodeURIComponent(task.title);
+        const dates = `${formatDate(startDate)}/${formatDate(endDate)}`;
+        
+        const subtaskDetails = task.sub_tasks.map(st => `- ${st.title}`).join('\\n');
+        const details = encodeURIComponent(subtaskDetails);
+        
+        const calendarUrl = `${baseUrl}&text=${text}&dates=${dates}&details=${details}`;
+        window.open(calendarUrl, '_blank');
     };
 
     const handleToggleSubTask = async (subTaskId: number, isCompleted: boolean) => {
@@ -211,6 +239,14 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                     <Label htmlFor="title">Task Name</Label>
                                     <Input id="title" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} />
                                 </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="datetime">Task Date & Time (optional)</Label>
+                                    <Input id="datetime" type="datetime-local" value={newTaskDateTime} onChange={e => setNewTaskDateTime(e.target.value)} />
+                                </div>
+                                 <div className="space-y-2">
+                                    <Label htmlFor="duration">Duration (minutes)</Label>
+                                    <Input id="duration" type="number" value={newDuration} onChange={e => setNewDuration(parseInt(e.target.value) || 30)} />
+                                </div>
                                 
                                 <div className="space-y-2">
                                     <Label htmlFor="subtasks">Sub-tasks</Label>
@@ -226,11 +262,6 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                         <Input id="subtasks" placeholder="Add a sub-task..." value={newSubTaskInput} onChange={(e) => setNewSubTaskInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddSubTask()} />
                                         <Button onClick={handleAddSubTask}>Add</Button>
                                     </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="reminder">Reminder Interval (minutes, optional)</Label>
-                                    <Input id="reminder" type="number" value={newReminderInterval ?? ''} onChange={(e) => setNewReminderInterval(e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g., 60"/>
-                                    <p className="text-xs text-muted-foreground">Note: External notifications are not supported in this prototype.</p>
                                 </div>
                             </div>
                             <DialogFooter>
@@ -260,20 +291,21 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                     <div className="flex-1 space-y-2">
                                         <p className="font-medium">{task.title}</p>
                                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                            
                                             {totalSubTasks > 0 && (
                                                 <span>{completedSubTasks} of {totalSubTasks} steps</span>
                                             )}
-                                            {task.reminder_interval && (
-                                                <div className="flex items-center gap-1">
-                                                    <Clock className="h-3 w-3" />
-                                                    <span>Every {task.reminder_interval} min</span>
-                                                </div>
+                                            {task.task_datetime && (
+                                                <span className="font-mono">{format(new Date(task.task_datetime), 'PPp')}</span>
                                             )}
                                         </div>
                                         <Progress value={progress} className="h-2" />
                                     </div>
                                     <div className="flex items-center gap-1 ml-4">
+                                        {task.task_datetime && (
+                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleAddToCalendar(task)}>
+                                                <CalendarPlus className="h-4 w-4" />
+                                            </Button>
+                                        )}
                                         {totalSubTasks > 0 && (
                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleTaskExpansion(task.id)}>
                                                 {isExpanded ? <ChevronUp /> : <ChevronDown />}
