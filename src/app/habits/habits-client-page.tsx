@@ -1,4 +1,3 @@
-
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -7,18 +6,17 @@ import { Input } from '@/components/ui/input';
 import { Check, Flame, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isToday, subDays } from 'date-fns';
-import { useRouter } from 'next/navigation';
-import { db } from '@/lib/firebase';
-import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 type Habit = {
-  id: string;
+  _id: string;
   title: string;
   category: string;
   streak_count: number;
@@ -36,33 +34,32 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
   const [newHabitTitle, setNewHabitTitle] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const router = useRouter();
+
+  const insertHabit = useMutation(api.crud.insert);
+  const updateHabit = useMutation(api.crud.update);
+
+  useEffect(() => {
+    setHabits(initialHabits);
+  }, [initialHabits]);
 
   const handleAddHabit = async () => {
     if (!userId || !newHabitTitle.trim()) return;
     setIsLoading(true);
     try {
-        const docRef = await addDoc(collection(db, 'users', userId, 'habits'), {
+        await insertHabit({
+          table: 'habits',
+          data: {
             title: newHabitTitle,
             category: 'General',
             streak_count: 0,
             last_completed: null,
-            createdAt: serverTimestamp()
+            createdAt: new Date().toISOString(),
+            userId
+          }
         });
         
-        const newHabit = {
-            id: docRef.id,
-            title: newHabitTitle,
-            category: 'General',
-            streak_count: 0,
-            last_completed: null,
-            userId: userId,
-        };
-
-        setHabits([...habits, newHabit]);
         setNewHabitTitle('');
         toast({ title: 'Habit Added!', description: `You're now tracking "${newHabitTitle}".` });
-        router.refresh();
 
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Error adding habit', description: error.message });
@@ -70,31 +67,27 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
     setIsLoading(false);
   };
 
-  const handleMarkAsDone = async (habitId: string) => {
+  const handleMarkAsDone = async (habit: Habit) => {
       if (!userId) return;
-
-      const habit = habits.find(h => h.id === habitId);
-      if (!habit || (habit.last_completed && isToday(new Date(habit.last_completed)))) return;
+      if (habit.last_completed && isToday(new Date(habit.last_completed))) return;
 
       const newStreak = (habit.last_completed && isToday(subDays(new Date(), 1))) 
           ? (habit.streak_count || 0) + 1 
           : 1;
 
       const newLastCompleted = new Date().toISOString();
-
-      const optimisticHabits = habits.map(h => h.id === habitId ? { ...h, streak_count: newStreak, last_completed: newLastCompleted } : h);
-      setHabits(optimisticHabits);
       
       try {
-        const habitRef = doc(db, 'users', userId, 'habits', habitId);
-        await updateDoc(habitRef, {
+        await updateHabit({
+          table: 'habits',
+          id: habit._id,
+          patch: {
             streak_count: newStreak,
             last_completed: newLastCompleted,
+          }
         });
-        router.refresh(); // Re-fetch server data
       } catch (error: any) {
           toast({ variant: 'destructive', title: 'Error updating habit', description: error.message });
-          setHabits(habits); // Revert optimistic update
       }
   }
 
@@ -131,7 +124,7 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
             habits.map((habit) => {
                 const completedToday = habit.last_completed ? isToday(new Date(habit.last_completed)) : false;
                 return (
-                    <Card key={habit.id}>
+                    <Card key={habit._id}>
                     <CardHeader>
                         <div className="flex justify-between items-start">
                         <div>
@@ -140,7 +133,7 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
                         </div>
                         <Button 
                             variant={completedToday ? "default" : "outline"} 
-                            onClick={() => handleMarkAsDone(habit.id)}
+                            onClick={() => handleMarkAsDone(habit)}
                             disabled={completedToday}
                         >
                             <Check className="mr-2 h-4 w-4" /> {completedToday ? "Done!" : "Mark as Done"}

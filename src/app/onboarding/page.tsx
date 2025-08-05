@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -13,10 +12,10 @@ import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Hand, Heart, Bra
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 const totalSteps = 4;
 
@@ -54,6 +53,11 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { toast } = useToast();
 
+  const updateUser = useMutation(api.crud.update);
+  const listUsers = useMutation(api.crud.list);
+  const listBadges = useMutation(api.crud.list);
+  const insertBadge = useMutation(api.crud.insert);
+
   useEffect(() => {
     const guest = sessionStorage.getItem('isGuest') === 'true';
     setIsGuest(guest);
@@ -82,14 +86,15 @@ export default function OnboardingPage() {
   };
   
   const awardBadge = async (currentUserId: string, code: string, name: string) => {
-    const badgeRef = doc(db, 'users', currentUserId, 'badges', code);
-    const badgeDoc = await getDoc(badgeRef);
-    if (!badgeDoc.exists()) {
-        await setDoc(badgeRef, {
+    const userBadges: any[] = await listBadges({table: 'badges'}) || [];
+    const badgeDoc = userBadges.find(b => b.userId === currentUserId && b.badge_code === code);
+    if (!badgeDoc) {
+        await insertBadge({ table: 'badges', data: {
             badge_code: code,
             badge_name: name,
-            unlockedAt: serverTimestamp(),
-        });
+            unlockedAt: new Date().toISOString(),
+            userId: currentUserId,
+        }});
         toast({
             title: 'Badge Unlocked!',
             description: `You've earned the "${name}" badge!`,
@@ -112,23 +117,23 @@ export default function OnboardingPage() {
     }
     
     try {
-        const userDocRef = doc(db, 'users', user.uid);
-        
-        const userDoc = await getDoc(userDocRef);
-        const existingName = userDoc.exists() ? userDoc.data().name : '';
+        const allUsers: any[] = await listUsers({table: 'users'});
+        const userDoc: any = allUsers.find(u => u.uid === user.uid);
+
+        if(!userDoc) {
+          toast({variant: 'destructive', title: 'Onboarding Error', description: "Could not find user record to update."});
+          return;
+        }
 
         const onboardingData = {
-            name: existingName || user.displayName || user.email?.split('@')[0],
-            email: user.email,
             moodBaseline: mood[0],
             sleepQuality: sleepQuality,
             supportTags: supportTags,
             therapyTone: therapyTone,
             onboardingComplete: true,
-            createdAt: serverTimestamp(),
         };
         
-        await setDoc(userDocRef, onboardingData, { merge: true });
+        await updateUser({ table: 'users', id: userDoc._id, patch: onboardingData });
 
         await awardBadge(user.uid, 'welcome_explorer', 'Welcome Explorer');
 

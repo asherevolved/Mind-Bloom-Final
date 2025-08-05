@@ -1,65 +1,45 @@
-
+'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { JournalClientPage } from './journal-client-page';
-import { cookies } from 'next/headers';
-import { auth, db } from '@/lib/firebase-admin';
-import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
-
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { useEffect, useState } from 'react';
 
 export type JournalEntry = {
-  id: string;
+  _id: string;
   title: string;
   mood_tag: string;
-  created_at: string; // ISO string
+  createdAt: string; // ISO string
   entry: string;
+  userId: string;
 };
 
-async function getJournalEntries(userId: string): Promise<JournalEntry[]> {
-    if(!userId) return [];
-    
-    try {
-        const journalRef = collection(db, 'users', userId, 'journal');
-        const q = query(journalRef, orderBy('createdAt', 'desc'));
-        const journalSnapshot = await getDocs(q);
-        
-        return journalSnapshot.docs.map(doc => {
-            const data = doc.data();
-            const createdAtTimestamp = data.createdAt as Timestamp;
-            return {
-                id: doc.id,
-                title: data.title,
-                mood_tag: data.mood_tag,
-                created_at: createdAtTimestamp.toDate().toISOString(),
-                entry: data.entry,
-            };
-        });
-    } catch (error) {
-        console.error("Error fetching journal entries from Firestore:", error);
-        return [];
-    }
-}
+export default function JournalPage() {
+    const [userId, setUserId] = useState<string | null>(null);
+    const allEntries = useQuery(api.crud.list, { table: 'journal' }) || [];
+    const [userEntries, setUserEntries] = useState([]);
 
-export default async function JournalPage() {
-    let userId: string | null = null;
-    let entries: JournalEntry[] = [];
-    
-    try {
-        const cookieStore = cookies();
-        const idToken = cookieStore.get('idToken')?.value;
-        if (idToken) {
-            const decodedToken = await auth.verifyIdToken(idToken);
-            userId = decodedToken.uid;
-            entries = await getJournalEntries(userId);
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                setUserId(user.uid);
+            }
+        });
+        return () => unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        if(userId && allEntries) {
+            setUserEntries(allEntries.filter((e: any) => e.userId === userId));
         }
-    } catch(error){
-        console.log("Could not authenticate user on server", error);
-    }
+    }, [userId, allEntries]);
   
   return (
     <MainAppLayout>
-        <JournalClientPage initialEntries={entries} userId={userId} />
+        <JournalClientPage initialEntries={userEntries} userId={userId} />
     </MainAppLayout>
   );
 }
-    

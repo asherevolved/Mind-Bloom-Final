@@ -1,4 +1,3 @@
-
 'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
@@ -9,9 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, getDocs } from 'firebase/firestore';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 const allBadges = [
   { code: 'welcome_explorer', name: 'Welcome Explorer', icon: Star, criteria: 'Complete the onboarding flow' },
@@ -31,32 +31,38 @@ type BadgeInfo = typeof allBadges[0] & { unlocked: boolean };
 export default function BadgesPage() {
   const [badges, setBadges] = useState<BadgeInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  const badgesList = useQuery(api.crud.list, { table: 'badges'});
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if(user) {
-            try {
-                const badgesSnapshot = await getDocs(collection(db, 'users', user.uid, 'badges'));
-                const unlockedCodes = badgesSnapshot.docs.map(doc => doc.data().badge_code);
-                
-                const badgeStatus = allBadges.map(b => ({
-                    ...b,
-                    unlocked: unlockedCodes.includes(b.code),
-                }));
-                setBadges(badgeStatus);
-            } catch(error) {
-                 toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch your badges.' });
-            }
+            setUserId(user.uid);
         } else {
             // Handle guest user - no badges
             const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
             setBadges(badgeStatus);
+            setIsLoading(false);
         }
-        setIsLoading(false);
     });
     return () => unsubscribe();
   }, [toast]);
+  
+  useEffect(() => {
+    if(badgesList !== undefined && userId) {
+      const unlockedCodes = badgesList.filter((b: any) => b.userId === userId).map((b: any) => b.badge_code);
+      const badgeStatus = allBadges.map(b => ({
+          ...b,
+          unlocked: unlockedCodes.includes(b.code),
+      }));
+      setBadges(badgeStatus);
+      setIsLoading(false);
+    } else if (!userId) {
+        setIsLoading(false);
+    }
+  }, [badgesList, userId]);
   
   const unlockedBadges = badges.filter(b => b.unlocked);
   const lockedBadges = badges.filter(b => !b.unlocked);

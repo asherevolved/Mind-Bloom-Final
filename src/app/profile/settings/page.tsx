@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -12,10 +11,12 @@ import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Bell, Download, Trash2, Moon, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '../../../../convex/_generated/api';
+
 
 type Preferences = {
     darkMode: boolean;
@@ -24,6 +25,7 @@ type Preferences = {
 
 type UserProfile = {
   uid: string;
+  _id?: string;
   email?: string;
   name?: string;
   photoURL?: string;
@@ -38,25 +40,27 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  const allUsers = useQuery(api.crud.list, { table: 'users' });
+  const updateUser = useMutation(api.crud.update);
+
   useEffect(() => {
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-          if (currentUser) {
+          if (currentUser && allUsers) {
               setIsGuest(false);
-              const userDocRef = doc(db, 'users', currentUser.uid);
-              const userDoc = await getDoc(userDocRef);
+              const userDoc: any = allUsers.find((u: any) => u.uid === currentUser.uid);
 
-              if (userDoc.exists()) {
-                  const userData = userDoc.data();
+              if (userDoc) {
                   setUser({
                       uid: currentUser.uid,
+                      _id: userDoc._id,
                       email: currentUser.email || '',
-                      name: userData.name || currentUser.displayName || '',
+                      name: userDoc.name || currentUser.displayName || '',
                       photoURL: currentUser.photoURL || '',
                   });
-                  setName(userData.name || currentUser.displayName || '');
+                  setName(userDoc.name || currentUser.displayName || '');
                   setPreferences({
-                      darkMode: userData.darkMode ?? true,
-                      notificationFrequency: userData.notificationFrequency ?? 'daily',
+                      darkMode: userDoc.darkMode ?? true,
+                      notificationFrequency: userDoc.notificationFrequency ?? 'daily',
                   });
               }
           } else {
@@ -70,13 +74,13 @@ export default function SettingsPage() {
           setIsLoading(false);
       });
       return () => unsubscribe();
-  }, []);
+  }, [allUsers]);
 
   const handleUpdateProfile = async () => {
-    if (!user || isGuest || !auth.currentUser) return;
+    if (!user || isGuest || !auth.currentUser || !user._id) return;
     try {
         await updateProfile(auth.currentUser, { displayName: name });
-        await updateDoc(doc(db, 'users', user.uid), { name });
+        await updateUser({table: 'users', id: user._id, patch: { name }});
         toast({ title: 'Profile Updated!' });
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Update failed', description: error.message});
@@ -84,13 +88,13 @@ export default function SettingsPage() {
   }
 
   const handleUpdatePreferences = async (newPrefs: Partial<Preferences>) => {
-      if (!user || !preferences || isGuest) return;
+      if (!user || !preferences || isGuest || !user._id) return;
       
       const updatedPrefs = { ...preferences, ...newPrefs, darkMode: true };
       setPreferences(updatedPrefs);
 
       try {
-        await updateDoc(doc(db, 'users', user.uid), updatedPrefs);
+        await updateUser({ table: 'users', id: user._id, patch: updatedPrefs});
         toast({ title: 'Preferences Saved!' });
       } catch (error: any) {
           toast({ variant: 'destructive', title: 'Update Failed', description: error.message });

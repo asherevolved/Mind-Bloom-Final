@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,10 +10,9 @@ import { Lightbulb, Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useRouter } from 'next/navigation';
 import type { Task, SuggestedTask } from './page';
-import { db } from '@/lib/firebase';
-import { addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
@@ -28,28 +26,28 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
     const [suggestedTasks] = useState<SuggestedTask[]>(initialSuggestedTasks);
     const [newTaskText, setNewTaskText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const router = useRouter();
+    
+    const insertTask = useMutation(api.crud.insert);
+    const updateTask = useMutation(api.crud.update);
+    const deleteTask = useMutation(api.crud.remove);
+
+    useEffect(() => {
+      setTasks(initialTasks);
+    }, [initialTasks]);
 
     const handleAddTask = async () => {
         if (!userId || !newTaskText.trim()) return;
         setIsLoading(true);
 
         try {
-            const docRef = await addDoc(collection(db, 'users', userId, 'tasks'), {
+            await insertTask({ table: 'tasks', data: {
                 title: newTaskText,
                 category: 'Manual',
                 is_completed: false,
-                createdAt: serverTimestamp(),
-            });
-            const newTask = {
-                id: docRef.id,
-                title: newTaskText,
-                category: 'Manual',
-                is_completed: false
-            };
-            setTasks([...tasks, newTask]);
+                createdAt: new Date().toISOString(),
+                userId,
+            }});
             setNewTaskText('');
-            router.refresh();
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
@@ -63,51 +61,35 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
         }
         
         try {
-            const docRef = await addDoc(collection(db, 'users', userId, 'tasks'), {
+            await insertTask({ table: 'tasks', data: {
                 title: task.title,
                 category: task.category,
                 is_completed: false,
-                createdAt: serverTimestamp(),
-            });
-            const newTask = {
-                id: docRef.id,
-                title: task.title,
-                category: task.category,
-                is_completed: false,
-            };
-            setTasks([...tasks, newTask]);
+                createdAt: new Date().toISOString(),
+                userId,
+            }});
             toast({ title: "Task Added!", description: `"${task.title}" has been added to your list.` });
-            router.refresh();
         } catch(error: any) {
             toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
     };
 
     const handleToggleTask = async (taskId: string, isCompleted: boolean) => {
-        const originalTasks = [...tasks];
-        setTasks(tasks.map(t => t.id === taskId ? { ...t, is_completed: isCompleted } : t));
         if (!userId) return;
 
         try {
-            const taskRef = doc(db, 'users', userId, 'tasks', taskId);
-            await updateDoc(taskRef, { is_completed: isCompleted });
-            router.refresh();
+            await updateTask({ table: 'tasks', id: taskId, patch: { is_completed: isCompleted } });
         } catch(error) {
-             setTasks(originalTasks);
              toast({ variant: 'destructive', title: 'Error updating task' });
         }
     };
 
     const handleDeleteTask = async (taskId: string) => {
-        const originalTasks = tasks;
-        setTasks(tasks.filter(t => t.id !== taskId));
         if (!userId) return;
 
         try {
-            await deleteDoc(doc(db, 'users', userId, 'tasks', taskId));
-            router.refresh();
+            await deleteTask({ table: 'tasks', id: taskId });
         } catch (error) {
-            setTasks(originalTasks);
             toast({ variant: 'destructive', title: 'Error deleting task' });
         }
     };
@@ -151,14 +133,14 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
                     [...Array(3)].map((_,i) => <Skeleton key={i} className="h-12 w-full rounded-md" />)
                   ) : (
                     tasks.map(task => (
-                      <div key={task.id} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
+                      <div key={task._id} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
                         <div className="flex items-center gap-3">
-                           <Checkbox id={task.id} checked={task.is_completed} onCheckedChange={(checked) => handleToggleTask(task.id, !!checked)} />
-                           <label htmlFor={task.id} className="text-sm font-medium data-[done=true]:line-through data-[done=true]:text-muted-foreground" data-done={task.is_completed}>{task.title}</label>
+                           <Checkbox id={task._id} checked={task.is_completed} onCheckedChange={(checked) => handleToggleTask(task._id, !!checked)} />
+                           <label htmlFor={task._id} className="text-sm font-medium data-[done=true]:line-through data-[done=true]:text-muted-foreground" data-done={task.is_completed}>{task.title}</label>
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline">{task.category}</Badge>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteTask(task.id)}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteTask(task._id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
@@ -8,13 +7,17 @@ import { HeartPulse, MapPin, Phone, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 
 export default function CrisisPage() {
   const { toast } = useToast();
+  const insertBadge = useMutation(api.crud.insert);
+  const listBadges = useMutation(api.crud.list);
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -25,15 +28,16 @@ export default function CrisisPage() {
 
     const awardBadge = async (userId: string) => {
         const badgeCode = 'help_seeker';
-        const badgeRef = doc(db, 'users', userId, 'badges', badgeCode);
-        const badgeDoc = await getDoc(badgeRef);
+        const allBadges: any[] = await listBadges({table: 'badges'}) || [];
+        const badgeDoc = allBadges.find(b => b.userId === userId && b.badge_code === badgeCode);
 
-        if (!badgeDoc.exists()) {
-            await setDoc(badgeRef, {
+        if (!badgeDoc) {
+            await insertBadge({ table: 'badges', data: {
                 badge_code: badgeCode,
                 badge_name: 'Help Seeker',
-                unlockedAt: serverTimestamp(),
-            });
+                unlockedAt: new Date().toISOString(),
+                userId: userId,
+            }});
             toast({
                 title: 'Badge Unlocked!',
                 description: `You've earned the "Help Seeker" badge. It's okay to ask for help.`,
@@ -43,7 +47,7 @@ export default function CrisisPage() {
     };
 
     return () => unsubscribe();
-  }, [toast]);
+  }, [toast, insertBadge, listBadges]);
 
 
   return (

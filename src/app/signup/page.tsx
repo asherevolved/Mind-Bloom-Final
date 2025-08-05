@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -10,9 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -21,6 +21,7 @@ export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+  const insertUser = useMutation(api.crud.insert);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,17 +32,16 @@ export default function SignupPage() {
       const user = userCredential.user;
 
       if (user) {
-        // Update Firebase Auth profile and create user document in Firestore
+        // Update Firebase Auth profile
         await updateProfile(user, { displayName: name });
         try {
-            const userDocRef = doc(db, 'users', user.uid);
-            await setDoc(userDocRef, {
+            await insertUser({ table: 'users', data: {
               uid: user.uid,
               name,
               email,
               createdAt: new Date(),
               onboardingComplete: false,
-            });
+            }});
         } catch (dbError: any) {
             toast({ variant: 'destructive', title: 'Database Error', description: `User created, but failed to save profile: ${dbError.message}` });
             setIsLoading(false);

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -12,9 +11,10 @@ import Link from 'next/link';
 import { analyzeSession, AnalyzeSessionOutput, AnalyzeSessionInput } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 
 export default function AnalysisPage() {
@@ -25,6 +25,13 @@ export default function AnalysisPage() {
   const { toast } = useToast();
   const [userId, setUserId] = useState<string | null>(null);
   const [hasAwardedBadge, setHasAwardedBadge] = useState(false);
+
+  const insertAnalysis = useMutation(api.crud.insert);
+  const updateBadge = useMutation(api.crud.update);
+  const listBadges = useMutation(api.crud.list);
+  const insertTask = useMutation(api.crud.insert);
+  const getUser = useMutation(api.crud.get);
+  const getSession = useMutation(api.crud.get);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
@@ -49,25 +56,24 @@ export default function AnalysisPage() {
       let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
 
       if (userId) {
-        const userDoc = await getDoc(doc(db, 'users', userId));
-        if (userDoc.exists()) {
-            const data = userDoc.data();
+        const userDoc = await getUser({table: 'users', id: userId});
+        if (userDoc) {
             onboardingData = {
-                moodBaseline: data.moodBaseline,
-                supportTags: data.supportTags,
-                therapyTone: data.therapyTone,
+                moodBaseline: userDoc.moodBaseline,
+                supportTags: userDoc.supportTags,
+                therapyTone: userDoc.therapyTone,
             };
         }
       }
 
       if (sessionId && userId) {
-        const sessionDoc = await getDoc(doc(db, 'therapy_sessions', sessionId));
-        if (!sessionDoc.exists() || sessionDoc.data().userId !== userId) {
+        const sessionDoc: any = await getSession({table: 'therapy_sessions', id: sessionId });
+        if (!sessionDoc || sessionDoc.userId !== userId) {
           setError('Could not retrieve session data. Please try again.');
           setIsLoading(false);
           return;
         }
-        const messages = sessionDoc.data().messages || [];
+        const messages = sessionDoc.messages || [];
         transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
       } else {
         const guestSession = sessionStorage.getItem('sessionData');
@@ -94,9 +100,9 @@ export default function AnalysisPage() {
               summary: result.emotionalSummary.summaryText,
               emotionalInsights: result.insights,
               suggestedSteps: result.suggestedSteps,
-              createdAt: serverTimestamp(),
+              createdAt: new Date().toISOString(),
           };
-          await addDoc(collection(db, 'analysis'), analysisData);
+          await insertAnalysis({ table: 'analysis', data: analysisData });
           await awardBadge('self_reflector', 'Self-Reflector', userId);
         }
 
@@ -112,18 +118,19 @@ export default function AnalysisPage() {
     };
 
     processSession();
-  }, [userId]);
+  }, [userId, getUser, getSession, insertAnalysis]);
 
   const awardBadge = async (code: string, name: string, currentUserId: string) => {
-    const badgeRef = doc(db, 'users', currentUserId, 'badges', code);
-    const badgeDoc = await getDoc(badgeRef);
+    const userBadges: any[] = await listBadges({table: 'badges'}) || [];
+    const badgeDoc = userBadges.find(b => b.userId === currentUserId && b.badge_code === code);
 
-    if (!badgeDoc.exists()) { // if badge doesn't exist
-        await setDoc(badgeRef, {
+    if (!badgeDoc) { 
+        await insertAnalysis({table: 'badges', data: {
+            userId: currentUserId,
             badge_code: code,
             badge_name: name,
-            unlockedAt: serverTimestamp(),
-        });
+            unlockedAt: new Date().toISOString(),
+        }});
         setHasAwardedBadge(true);
         toast({
             title: 'Badge Unlocked!',
@@ -140,12 +147,13 @@ export default function AnalysisPage() {
         return;
     }
     try {
-        await addDoc(collection(db, 'users', userId, 'tasks'), {
+        await insertTask({table: 'tasks', data: {
+            userId: userId,
             title: title,
             category: 'AI-Suggested',
             is_completed: false,
-            createdAt: serverTimestamp()
-        });
+            createdAt: new Date().toISOString()
+        }});
         toast({
             title: 'Task Added!',
             description: `"${title}" has been added to your list. 💪`,

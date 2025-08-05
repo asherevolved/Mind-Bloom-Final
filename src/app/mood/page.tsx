@@ -1,66 +1,46 @@
-
+'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { MoodClientPage } from './mood-client-page';
-import { cookies } from 'next/headers';
-import { auth, db } from '@/lib/firebase-admin';
-import { collection, getDocs, query, orderBy, Timestamp } from 'firebase/firestore';
-
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { useEffect, useState } from 'react';
 
 export type MoodLog = {
-  id: string;
+  _id: string;
   mood_score: number;
   tags: string[];
   note: string;
-  created_at: string; // ISO String
+  createdAt: string; // ISO String
+  userId: string;
 };
 
-async function getMoods(userId: string): Promise<MoodLog[]> {
-    if(!userId) return [];
-    
-    try {
-        const moodsRef = collection(db, 'users', userId, 'mood_logs');
-        const q = query(moodsRef, orderBy('createdAt', 'desc'));
-        const moodsSnapshot = await getDocs(q);
 
-        return moodsSnapshot.docs.map(doc => {
-            const data = doc.data();
-            const createdAtTimestamp = data.createdAt as Timestamp;
-            return {
-                id: doc.id,
-                mood_score: data.mood_score,
-                tags: data.tags || [],
-                note: data.note || '',
-                created_at: createdAtTimestamp.toDate().toISOString(),
-            };
-        });
-    } catch(error) {
-        console.error('Error fetching moods from Firestore:', error);
-        return [];
+export default function MoodPage() {
+  const [userId, setUserId] = useState<string | null>(null);
+  const allMoods = useQuery(api.crud.list, { table: 'mood_logs' }) || [];
+  const [userMoods, setUserMoods] = useState([]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            setUserId(user.uid);
+        }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if(userId && allMoods) {
+      setUserMoods(allMoods.filter((m: any) => m.userId === userId));
     }
-}
-
-
-export default async function MoodPage() {
-  let userId: string | null = null;
-  let pastMoods: MoodLog[] = [];
-
-  try {
-      const cookieStore = cookies();
-      const idToken = cookieStore.get('idToken')?.value;
-      if (idToken) {
-          const decodedToken = await auth.verifyIdToken(idToken);
-          userId = decodedToken.uid;
-          pastMoods = await getMoods(userId);
-      }
-  } catch(error) {
-      console.log("Could not authenticate user on server", error);
-  }
+  }, [userId, allMoods]);
   
   return (
     <MainAppLayout>
-        <MoodClientPage initialMoods={pastMoods} userId={userId} />
+        <MoodClientPage initialMoods={userMoods} userId={userId} />
     </MainAppLayout>
   );
 }
-    

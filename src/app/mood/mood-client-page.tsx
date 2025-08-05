@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Slider } from '@/components/ui/slider';
@@ -12,10 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MoodLog } from './page';
-import { useRouter } from 'next/navigation';
-import { db } from '@/lib/firebase';
-import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 const moodIcons = [
   { icon: Angry, color: 'text-red-400' },
@@ -41,8 +38,14 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
   const [pastMoods, setPastMoods] = useState<MoodLog[]>(initialMoods);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const router = useRouter();
 
+  const insertMoodLog = useMutation(api.crud.insert);
+  const listBadges = useMutation(api.crud.list);
+  const insertBadge = useMutation(api.crud.insert);
+
+  useEffect(() => {
+    setPastMoods(initialMoods);
+  }, [initialMoods]);
 
   const handleLogMood = async () => {
     if (!userId) {
@@ -51,29 +54,19 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
     }
     setIsLoading(true);
     try {
-      const docRef = await addDoc(collection(db, 'users', userId, 'mood_logs'), {
+      await insertMoodLog({ table: 'mood_logs', data: {
         mood_score: mood[0],
         tags: selectedTags,
         note: note,
-        createdAt: serverTimestamp(),
-      });
-      
-      const newLog = {
-          id: docRef.id,
-          mood_score: mood[0],
-          tags: selectedTags,
-          note: note,
-          created_at: new Date().toISOString()
-      };
+        createdAt: new Date().toISOString(),
+        userId,
+      }});
 
       toast({ title: 'Mood Logged!', description: 'Your mood has been saved.' });
-      setPastMoods([newLog, ...pastMoods]);
       setMood([5]);
       setSelectedTags([]);
       setNote('');
       await checkBadges();
-      router.refresh();
-
     } catch(error: any) {
       toast({ variant: 'destructive', title: 'Error logging mood', description: error.message });
     }
@@ -83,36 +76,35 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
   const checkBadges = async () => {
       if (!userId) return;
 
-      const badgeCode = 'mood_starter';
-      const badgeRef = doc(db, 'users', userId, 'badges', badgeCode);
-      const badgeDoc = await getDoc(badgeRef);
+      const userBadges: any[] = await listBadges({table: 'badges'}) || [];
+      const moodStarterBadge = userBadges.find(b => b.userId === userId && b.badge_code === 'mood_starter');
+      const moodStreakerBadge = userBadges.find(b => b.userId === userId && b.badge_code === 'mood_streaker');
 
-      if (!badgeDoc.exists()) {
-          // In real app, check if this is the first mood log
-          awardBadge(badgeCode, 'Mood Starter');
+      if (!moodStarterBadge) {
+          awardBadge('mood_starter', 'Mood Starter');
       }
-      // Simplified streak logic for demo
-      if (pastMoods.length >= 2) { // check if at least 3 logs exist now
+      
+      if (!moodStreakerBadge && pastMoods.length >= 2) { 
         awardBadge('mood_streaker', 'Mood Streaker');
       }
   }
 
   const awardBadge = async (code: string, name: string) => {
     if (!userId) return;
-    const badgeRef = doc(db, 'users', userId, 'badges', code);
-    const docSnap = await getDoc(badgeRef);
-    
-    if (!docSnap.exists()) { // if badge doesn't exist
-        await setDoc(badgeRef, {
-            badge_code: code,
-            badge_name: name,
-            unlockedAt: serverTimestamp()
-        });
+    try {
+        await insertBadge({ table: 'badges', data: {
+          badge_code: code,
+          badge_name: name,
+          unlockedAt: new Date().toISOString(),
+          userId,
+        }});
         toast({
             title: 'Badge Unlocked!',
             description: `You've earned the "${name}" badge!`,
             action: <Trophy className="h-5 w-5 text-yellow-500" />
         });
+    } catch(error) {
+      // Fail silently
     }
   }
 
@@ -174,12 +166,12 @@ export function MoodClientPage({ initialMoods, userId }: MoodClientPageProps) {
                 {pastMoods.map(log => {
                   const LogIcon = moodIcons[Math.floor((log.mood_score / 10) * (moodIcons.length - 1))];
                   return (
-                    <li key={log.id} className="p-4 flex items-start gap-4">
+                    <li key={log._id} className="p-4 flex items-start gap-4">
                       <LogIcon.icon className={cn("w-10 h-10 mt-1 shrink-0", LogIcon.color)} />
                       <div className="flex-grow">
                         <div className="flex justify-between items-start">
                            <p className="font-semibold text-foreground">Mood level: {log.mood_score}/10</p>
-                           <p className="text-xs text-muted-foreground">{new Date(log.created_at).toLocaleDateString()}</p>
+                           <p className="text-xs text-muted-foreground">{new Date(log.createdAt).toLocaleDateString()}</p>
                         </div>
                         {log.note && <p className="text-sm text-muted-foreground italic">"{log.note}"</p>}
                         <div className="mt-2 flex flex-wrap gap-1">

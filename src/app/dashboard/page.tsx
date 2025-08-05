@@ -1,4 +1,4 @@
-
+'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
@@ -6,9 +6,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
 import Link from 'next/link';
-import { cookies } from 'next/headers';
-import { auth, db } from '@/lib/firebase-admin';
-import { collection, getDocs, limit, query, where, orderBy } from 'firebase/firestore';
+import { useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { useEffect, useState } from 'react';
 import { getAiTip } from '@/ai/flows/dashboard-tip';
 
 type DashboardData = {
@@ -22,92 +24,107 @@ type DashboardData = {
     aiTip: string;
 };
 
-async function getDashboardData(userId: string): Promise<DashboardData> {
-    const userDocRef = db.collection('users').doc(userId);
-    const userDoc = await userDocRef.get();
-    const userData = userDoc.data();
+export default function DashboardPage() {
+    const [userId, setUserId] = useState<string | null>(null);
+    const [data, setData] = useState<DashboardData | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Mood
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const moodQuery = query(
-        collection(db, 'users', userId, 'mood_logs'),
-        where('createdAt', '>=', today),
-        limit(1)
-    );
-    const moodSnapshot = await getDocs(moodQuery);
-    const moodLogged = !moodSnapshot.empty;
+    const users = useQuery(api.crud.list, { table: 'users' });
+    const moodLogs = useQuery(api.crud.list, { table: 'mood_logs' });
+    const tasks = useQuery(api.crud.list, { table: 'tasks' });
+    const badges = useQuery(api.crud.list, { table: 'badges' });
+    const journalEntries = useQuery(api.crud.list, { table: 'journal' });
+    const habits = useQuery(api.crud.list, { table: 'habits' });
 
-    // Tasks
-    const tasksQuery = collection(db, 'users', userId, 'tasks');
-    const tasksSnapshot = await getDocs(tasksQuery);
-    const totalTasks = tasksSnapshot.size;
-    const completedTasks = tasksSnapshot.docs.filter(doc => doc.data().is_completed).length;
-    const tasksLeft = totalTasks - completedTasks;
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                setUserId(user.uid);
+            } else {
+                setIsLoading(false);
+            }
+        });
+        return () => unsubscribe();
+    }, []);
 
-    // Badges
-    const badgesQuery = collection(db, 'users', userId, 'badges');
-    const badgesSnapshot = await getDocs(badgesQuery);
-    const badgesUnlocked = badgesSnapshot.size;
+    useEffect(() => {
+        if (userId && users && moodLogs && tasks && badges && journalEntries && habits) {
+            const processData = async () => {
+                const currentUser: any = users.find((u: any) => u.uid === userId);
+                if (!currentUser) {
+                    setIsLoading(false);
+                    return;
+                }
 
-    // Journal
-    const journalQuery = query(collection(db, 'users', userId, 'journal'), orderBy('createdAt', 'desc'), limit(1));
-    const journalSnapshot = await getDocs(journalQuery);
-    const lastJournalEntry = journalSnapshot.empty ? null : journalSnapshot.docs[0].data().entry;
-    
-    // Habits
-    const habitsQuery = query(collection(db, 'users', userId, 'habits'), orderBy('streak_count', 'desc'), limit(2));
-    const habitsSnapshot = await getDocs(habitsQuery);
-    const habitStreaks = habitsSnapshot.docs.map(doc => ({ name: doc.data().title, streak: doc.data().streak_count }));
-    
-    // AI Tip
-    const aiTip = await getAiTip({
-      onboardingGoals: userData?.supportTags || [],
-      recentMood: moodSnapshot.docs[0]?.data().note || 'neutral',
-    });
+                // Mood
+                const userMoodLogs: any[] = moodLogs.filter((log: any) => log.userId === userId);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const moodLogged = userMoodLogs.some((log: any) => new Date(log.createdAt) >= today);
+                
+                // Tasks
+                const userTasks: any[] = tasks.filter((task: any) => task.userId === userId);
+                const totalTasks = userTasks.length;
+                const completedTasks = userTasks.filter(task => task.is_completed).length;
+                const tasksLeft = totalTasks - completedTasks;
 
-    return {
-        name: userData?.name || 'Explorer',
-        moodLogged,
-        tasksLeft,
-        totalTasks,
-        badgesUnlocked,
-        lastJournalEntry,
-        habitStreaks,
-        aiTip: aiTip.tip,
-    };
-}
+                // Badges
+                const userBadges: any[] = badges.filter((badge: any) => badge.userId === userId);
+                const badgesUnlocked = userBadges.length;
+                
+                // Journal
+                const userJournalEntries: any[] = journalEntries.filter((entry: any) => entry.userId === userId);
+                userJournalEntries.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                const lastJournalEntry = userJournalEntries.length > 0 ? userJournalEntries[0].entry : null;
+                
+                // Habits
+                const userHabits: any[] = habits.filter((habit: any) => habit.userId === userId);
+                userHabits.sort((a,b) => b.streak_count - a.streak_count);
+                const habitStreaks = userHabits.slice(0, 2).map(habit => ({ name: habit.title, streak: habit.streak_count }));
+                
+                // AI Tip
+                const recentMoodNote = userMoodLogs.length > 0 ? userMoodLogs[0].note : 'neutral';
+                const tip = await getAiTip({
+                    onboardingGoals: currentUser?.supportTags || [],
+                    recentMood: recentMoodNote,
+                });
+                
+                setData({
+                    name: currentUser?.name || 'Explorer',
+                    moodLogged,
+                    tasksLeft,
+                    totalTasks,
+                    badgesUnlocked,
+                    lastJournalEntry,
+                    habitStreaks,
+                    aiTip: tip.tip,
+                });
+                setIsLoading(false);
+            };
+            processData();
+        }
+    }, [userId, users, moodLogs, tasks, badges, journalEntries, habits]);
 
+    if (isLoading) {
+        return (
+            <MainAppLayout>
+                <div className="p-8 text-center">Loading dashboard...</div>
+            </MainAppLayout>
+        );
+    }
 
-export default async function DashboardPage() {
-  let userId: string | null = null;
-  const cookieStore = cookies();
-  const idToken = cookieStore.get('idToken')?.value;
-  if (idToken) {
-      try {
-        const decodedToken = await auth.verifyIdToken(idToken);
-        userId = decodedToken.uid;
-      } catch (error) {
-        // Not a valid token, user is not logged in.
-        userId = null
-      }
-  }
-
-  // Handle case where user is not logged in
-  if (!userId) {
-     return (
-        <MainAppLayout>
-          <div className="p-8 text-center">
-            <h1 className="text-2xl font-bold">Welcome to Mind Bloom</h1>
-            <p className="text-muted-foreground mb-4">Please log in to see your dashboard.</p>
-            <Link href="/"><Button>Login</Button></Link>
-          </div>
-        </MainAppLayout>
-      );
-  }
+    if (!userId || !data) {
+        return (
+           <MainAppLayout>
+             <div className="p-8 text-center">
+               <h1 className="text-2xl font-bold">Welcome to Mind Bloom</h1>
+               <p className="text-muted-foreground mb-4">Please log in to see your dashboard.</p>
+               <Link href="/"><Button>Login</Button></Link>
+             </div>
+           </MainAppLayout>
+         );
+    }
   
-  const data = await getDashboardData(userId);
-
   return (
     <MainAppLayout>
       <div className="p-4 sm:p-6 lg:p-8">
@@ -215,4 +232,3 @@ export default async function DashboardPage() {
     </MainAppLayout>
   );
 }
-    

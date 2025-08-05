@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -21,10 +20,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { textToSpeech } from '@/ai/flows/text-to-speech';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -43,13 +43,17 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
+  const insertSession = useMutation(api.crud.insert);
+  const listUsers = useMutation(api.crud.list);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUserId(user.uid);
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          setTherapyTone(userDoc.data().therapyTone || 'Reflective Listener');
+        const allUsers = await listUsers({table: 'users'});
+        const userDoc: any = allUsers?.find((u:any) => u.uid === user.uid);
+        if (userDoc) {
+          setTherapyTone(userDoc.therapyTone || 'Reflective Listener');
         }
       } else {
         const isGuest = sessionStorage.getItem('isGuest') === 'true';
@@ -60,7 +64,7 @@ export default function ChatPage() {
       }
     });
     return () => unsubscribe();
-  }, [router]);
+  }, [router, listUsers]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -127,10 +131,10 @@ export default function ChatPage() {
             const sessionData = {
                 userId: userId,
                 messages: messages,
-                createdAt: serverTimestamp(),
+                createdAt: new Date().toISOString(),
             };
-            const docRef = await addDoc(collection(db, 'therapy_sessions'), sessionData);
-            sessionStorage.setItem('sessionId', docRef.id);
+            const docRef = await insertSession({ table: 'therapy_sessions', data: sessionData});
+            sessionStorage.setItem('sessionId', docRef);
             router.push('/analysis');
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error Saving Session', description: error.message });

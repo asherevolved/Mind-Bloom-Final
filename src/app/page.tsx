@@ -1,4 +1,3 @@
-
 'use client';
 
 import Link from 'next/link';
@@ -10,9 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
+import { useConvexAuth } from 'convex/react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -21,6 +22,10 @@ export default function LoginPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+
+  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+  const listUsers = useMutation(api.crud.list);
+  const insertUser = useMutation(api.crud.insert);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,19 +36,20 @@ export default function LoginPage() {
       const user = userCredential.user;
 
       if (user) {
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
-
-        if (userDoc.exists() && userDoc.data().onboardingComplete) {
+        // This is simplified, in a real app you might query by a unique field like email
+        const existingUsers = await listUsers({table: 'users'});
+        const userDoc = existingUsers?.find((u: any) => u.uid === user.uid);
+        
+        if (userDoc && userDoc.onboardingComplete) {
           router.push('/dashboard');
         } else {
-          // If profile exists but onboarding is not complete OR profile doesn't exist
-          if (!userDoc.exists()) {
-            await setDoc(userDocRef, {
-              email: user.email,
-              name: user.displayName || email.split('@')[0],
-              createdAt: new Date()
-            });
+          if (!userDoc) {
+             await insertUser({table: 'users', data: {
+                uid: user.uid,
+                email: user.email,
+                name: user.displayName || email.split('@')[0],
+                createdAt: new Date()
+              }});
           }
           router.push('/onboarding');
         }
@@ -70,19 +76,20 @@ export default function LoginPage() {
       const user = result.user;
 
       if (user) {
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
+        const existingUsers = await listUsers({table: 'users'});
+        const userDoc = existingUsers?.find((u: any) => u.uid === user.uid);
 
-        if (!userDoc.exists()) {
-          await setDoc(userDocRef, {
+        if (!userDoc) {
+          await insertUser({table: 'users', data: {
+            uid: user.uid,
             email: user.email,
             name: user.displayName,
             createdAt: new Date(),
             onboardingComplete: false
-          });
+          }});
         }
         
-        const onboardingComplete = userDoc.exists() ? userDoc.data().onboardingComplete : false;
+        const onboardingComplete = userDoc ? userDoc.onboardingComplete : false;
         
         if (onboardingComplete) {
           router.push('/dashboard');
@@ -123,7 +130,7 @@ export default function LoginPage() {
                 </div>
                 <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading || isGoogleLoading}/>
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading || isGoogleLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || isGoogleLoading || isAuthLoading}>
                 {isLoading ? 'Logging in...' : 'Login'}
               </Button>
             </form>
@@ -136,7 +143,7 @@ export default function LoginPage() {
               </div>
             </div>
             <div className="space-y-2">
-               <Button variant="outline" className="w-full" onClick={handleGoogleLogin} disabled={isLoading || isGoogleLoading}>
+               <Button variant="outline" className="w-full" onClick={handleGoogleLogin} disabled={isLoading || isGoogleLoading || isAuthLoading}>
                  {isGoogleLoading ? (
                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -16,11 +15,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMutation } from 'convex/react';
+import { api } from '../../../convex/_generated/api';
 import type { JournalEntry } from './page';
-import { useRouter } from 'next/navigation';
-import { db } from '@/lib/firebase';
-import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-
 
 interface JournalClientPageProps {
     initialEntries: JournalEntry[];
@@ -34,8 +31,15 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
   const [pastEntries, setPastEntries] = useState<JournalEntry[]>(initialEntries);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
-  const router = useRouter();
   
+  const insertEntry = useMutation(api.crud.insert);
+  const listBadges = useMutation(api.crud.list);
+  const insertBadge = useMutation(api.crud.insert);
+  
+  useEffect(() => {
+    setPastEntries(initialEntries);
+  }, [initialEntries]);
+
   const handleSaveEntry = async () => {
     if (!userId) {
         toast({ variant: 'destructive', title: 'You must be logged in to save entries.'});
@@ -48,29 +52,19 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
     
     setIsLoading(true);
     try {
-        const docRef = await addDoc(collection(db, 'users', userId, 'journal'), {
+        await insertEntry({ table: 'journal', data: {
             title,
             mood_tag: moodTag,
             entry,
-            createdAt: serverTimestamp()
-        });
+            createdAt: new Date().toISOString(),
+            userId,
+        }});
         
-        const newEntry = {
-            id: docRef.id,
-            title,
-            mood_tag: moodTag,
-            entry,
-            created_at: new Date().toISOString() // Approximate client-side time
-        };
-
         toast({ title: 'Entry Saved!', description: 'Your journal has been updated.'});
-        setPastEntries([newEntry, ...pastEntries]);
         setTitle('');
         setMoodTag('');
         setEntry('');
         await checkBadges();
-        router.refresh();
-
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Error saving entry', description: error.message});
     }
@@ -81,11 +75,10 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
       if (!userId) return;
 
       const badgeCode = 'thought_starter';
-      const badgeRef = doc(db, 'users', userId, 'badges', badgeCode);
-      const badgeDoc = await getDoc(badgeRef);
+      const userBadges: any[] = await listBadges({table: 'badges'}) || [];
+      const badgeDoc = userBadges.find(b => b.userId === userId && b.badge_code === badgeCode);
 
-      if (!badgeDoc.exists()) {
-          // In a real app you might check if entry count is 1
+      if (!badgeDoc) {
           await awardBadge(badgeCode, 'Thought Starter');
       }
   }
@@ -93,12 +86,12 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
   const awardBadge = async (code: string, name: string) => {
     if (!userId) return;
     try {
-        const badgeRef = doc(db, 'users', userId, 'badges', code);
-        await setDoc(badgeRef, {
+        await insertBadge({ table: 'badges', data: {
             badge_code: code,
             badge_name: name,
-            unlockedAt: serverTimestamp(),
-        });
+            unlockedAt: new Date().toISOString(),
+            userId,
+        }});
 
         toast({
             title: 'Badge Unlocked!',
@@ -107,7 +100,6 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
         });
 
     } catch (error: any) {
-        // Don't bother user if badge award fails
         console.error("Failed to award badge", error);
     }
   }
@@ -148,17 +140,17 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
           ) : (
             <Accordion type="single" collapsible className="w-full space-y-2">
                 {pastEntries.map(entry => (
-                <AccordionItem key={entry.id} value={`item-${entry.id}`} className="border-b-0">
+                <AccordionItem key={entry._id} value={`item-${entry._id}`} className="border-b-0">
                     <Card>
                     <AccordionTrigger className="p-4 hover:no-underline">
                         <div className="flex-1 text-left">
                         <div className="flex justify-between items-center">
                             <h3 className="font-semibold text-foreground">{entry.title}</h3>
-                            <p className="text-xs text-muted-foreground hidden sm:block">{new Date(entry.created_at).toLocaleDateString()}</p>
+                            <p className="text-xs text-muted-foreground hidden sm:block">{new Date(entry.createdAt).toLocaleDateString()}</p>
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                             {entry.mood_tag && <Badge variant="secondary">{entry.mood_tag}</Badge>}
-                            <p className="text-xs text-muted-foreground sm:hidden">{new Date(entry.created_at).toLocaleDateString()}</p>
+                            <p className="text-xs text-muted-foreground sm:hidden">{new Date(entry.createdAt).toLocaleDateString()}</p>
                         </div>
                         </div>
                     </AccordionTrigger>
@@ -181,4 +173,3 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
       </div>
   );
 }
-    
