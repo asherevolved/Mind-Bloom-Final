@@ -11,8 +11,6 @@ import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { useMutation } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -21,7 +19,6 @@ export default function SignupPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
-  const insertUser = useMutation(api.crud.insert);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,13 +32,8 @@ export default function SignupPage() {
         // Update Firebase Auth profile
         await updateProfile(user, { displayName: name });
         try {
-            await insertUser({ table: 'users', data: {
-              uid: user.uid,
-              name,
-              email,
-              createdAt: new Date().toISOString(),
-              onboardingComplete: false,
-            }});
+            // Logic to insert new user profile into Supabase
+            // This would typically include the user.uid, name, and email.
         } catch (dbError: any) {
             toast({ variant: 'destructive', title: 'Database Error', description: `User created, but failed to save profile: ${dbError.message}` });
             setIsLoading(false);

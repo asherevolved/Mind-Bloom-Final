@@ -13,8 +13,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useMutation } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 
 export default function AnalysisPage() {
@@ -26,12 +24,6 @@ export default function AnalysisPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [hasAwardedBadge, setHasAwardedBadge] = useState(false);
 
-  const insertAnalysis = useMutation(api.crud.insert);
-  const updateBadge = useMutation(api.crud.update);
-  const listBadges = useMutation(api.crud.list);
-  const insertTask = useMutation(api.crud.insert);
-  const getUser = useMutation(api.crud.get);
-  const getSession = useMutation(api.crud.get);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
@@ -57,26 +49,17 @@ export default function AnalysisPage() {
       let transcript = '';
       let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
 
-      if (userId && userId !== 'guest') {
-        const userDoc: any = await getUser({table: 'users', id: userId});
-        if (userDoc) {
-            onboardingData = {
-                moodBaseline: userDoc.moodBaseline,
-                supportTags: userDoc.supportTags,
-                therapyTone: userDoc.therapyTone,
-            };
-        }
-      }
+      // User data fetching logic would go here with Supabase
+      // For now, we'll use placeholder data
 
       if (sessionId && userId && userId !== 'guest') {
-        const sessionDoc: any = await getSession({table: 'therapy_sessions', id: sessionId });
-        if (!sessionDoc || sessionDoc.userId !== userId) {
-          setError('Could not retrieve session data. Please try again.');
-          setIsLoading(false);
-          return;
+        // Session fetching logic would go here with Supabase
+        // For now, we'll rely on session storage
+        const guestSession = sessionStorage.getItem('sessionData');
+         if (guestSession) {
+            const messages = JSON.parse(guestSession).messages || [];
+            transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
         }
-        const messages = sessionDoc.messages || [];
-        transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
       } else {
         const guestSession = sessionStorage.getItem('sessionData');
         if (guestSession) {
@@ -96,16 +79,8 @@ export default function AnalysisPage() {
         setAnalysis(result);
 
         if (userId && userId !== 'guest' && sessionId) {
-          const analysisData = {
-              userId,
-              sessionId,
-              summary: result.emotionalSummary.summaryText,
-              emotionalInsights: result.insights,
-              suggestedSteps: result.suggestedSteps,
-              createdAt: new Date().toISOString(),
-          };
-          await insertAnalysis({ table: 'analysis', data: analysisData });
-          await awardBadge('self_reflector', 'Self-Reflector', userId);
+          // Analysis saving logic would go here with Supabase
+          // Badge awarding logic would go here with Supabase
         }
 
       } catch (err) {
@@ -120,28 +95,7 @@ export default function AnalysisPage() {
     };
 
     processSession();
-  }, [userId, getUser, getSession, insertAnalysis]);
-
-  const awardBadge = async (code: string, name: string, currentUserId: string) => {
-    if (currentUserId === 'guest') return;
-    const userBadges: any[] = await listBadges({table: 'badges'}) || [];
-    const badgeDoc = userBadges.find(b => b.userId === currentUserId && b.badge_code === code);
-
-    if (!badgeDoc) { 
-        await insertAnalysis({table: 'badges', data: {
-            userId: currentUserId,
-            badge_code: code,
-            badge_name: name,
-            unlockedAt: new Date().toISOString(),
-        }});
-        setHasAwardedBadge(true);
-        toast({
-            title: 'Badge Unlocked!',
-            description: `You've earned the "${name}" badge!`,
-            action: <Trophy className="h-5 w-5 text-yellow-500" />
-        });
-    }
-  }
+  }, [userId, router]);
 
 
   const handleAddTask = async (title: string) => {
@@ -150,13 +104,7 @@ export default function AnalysisPage() {
         return;
     }
     try {
-        await insertTask({table: 'tasks', data: {
-            userId: userId,
-            title: title,
-            category: 'AI-Suggested',
-            is_completed: false,
-            createdAt: new Date().toISOString()
-        }});
+        // Add task logic with Supabase would go here
         toast({
             title: 'Task Added!',
             description: `"${title}" has been added to your list. 💪`,

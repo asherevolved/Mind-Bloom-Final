@@ -14,8 +14,6 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 const totalSteps = 4;
 
@@ -53,11 +51,6 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const updateUser = useMutation(api.crud.update);
-  const userList = useQuery(api.crud.list, user ? { table: 'users' } : 'skip' );
-  const badgeList = useQuery(api.crud.list, user ? { table: 'badges' } : 'skip' );
-  const insertBadge = useMutation(api.crud.insert);
-
   useEffect(() => {
     const guest = sessionStorage.getItem('isGuest') === 'true';
     setIsGuest(guest);
@@ -86,21 +79,12 @@ export default function OnboardingPage() {
   };
   
   const awardBadge = async (currentUserId: string, code: string, name: string) => {
-    if (!badgeList) return;
-    const badgeDoc = badgeList.find((b: any) => b.userId === currentUserId && b.badge_code === code);
-    if (!badgeDoc) {
-        await insertBadge({ table: 'badges', data: {
-            badge_code: code,
-            badge_name: name,
-            unlockedAt: new Date().toISOString(),
-            userId: currentUserId,
-        }});
-        toast({
-            title: 'Badge Unlocked!',
-            description: `You've earned the "${name}" badge!`,
-            action: <Trophy className="h-5 w-5 text-yellow-500" />
-        });
-    }
+    // Badge awarding logic with Supabase would go here
+    toast({
+        title: 'Badge Unlocked!',
+        description: `You've earned the "${name}" badge!`,
+        action: <Trophy className="h-5 w-5 text-yellow-500" />
+    });
   }
 
   const handleFinish = async () => {
@@ -110,30 +94,23 @@ export default function OnboardingPage() {
         return;
     }
 
-    if (!user || !userList) {
+    if (!user) {
         toast({variant: 'destructive', title: 'Error', description: 'User not found. Please log in again.'});
         router.push('/');
         return;
     }
     
     try {
-        const userDoc: any = userList.find((u: any) => u.uid === user.uid);
-
-        if(!userDoc) {
-          toast({variant: 'destructive', title: 'Onboarding Error', description: "Could not find user record to update."});
-          return;
-        }
-
         const onboardingData = {
-            moodBaseline: mood[0],
-            sleepQuality: sleepQuality,
-            supportTags: supportTags,
-            therapyTone: therapyTone,
-            onboardingComplete: true,
+            mood_baseline: mood[0],
+            sleep_quality: sleepQuality,
+            support_tags: supportTags,
+            therapy_tone: therapyTone,
+            onboarding_complete: true,
         };
         
-        await updateUser({ table: 'users', id: userDoc._id, patch: onboardingData });
-
+        // Logic to update user profile in Supabase
+        
         await awardBadge(user.uid, 'welcome_explorer', 'Welcome Explorer');
 
         router.push('/dashboard');

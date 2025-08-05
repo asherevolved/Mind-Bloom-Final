@@ -23,8 +23,6 @@ import {
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { textToSpeech } from '@/ai/flows/text-to-speech';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -43,14 +41,14 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  const insertSession = useMutation(api.crud.insert);
-  const userList = useQuery(api.crud.list, userId ? { table: 'users' } : 'skip');
-
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUserId(user.uid);
+        // Fetch user data (including therapyTone) from Supabase
+        // For now, we'll set a default
+        setTherapyTone('Reflective Listener');
       } else {
         const isGuest = sessionStorage.getItem('isGuest') === 'true';
         if (!isGuest) {
@@ -63,15 +61,6 @@ export default function ChatPage() {
     });
     return () => unsubscribe();
   }, [router]);
-
-  useEffect(() => {
-    if (userId && userId !== 'guest' && userList) {
-        const userDoc: any = userList?.find((u:any) => u.uid === userId);
-        if (userDoc) {
-          setTherapyTone(userDoc.therapyTone || 'Reflective Listener');
-        }
-    }
-  }, [userId, userList]);
 
 
   useEffect(() => {
@@ -134,22 +123,21 @@ export default function ChatPage() {
       return;
     }
     
+    // Save session data to sessionStorage to be picked up by the analysis page.
+    // In a real app with Supabase, you might save this to the DB and pass an ID.
+    sessionStorage.setItem('sessionData', JSON.stringify({ messages }));
+
     if (userId && userId !== 'guest') {
         try {
-            const sessionData = {
-                userId: userId,
-                messages: messages,
-                createdAt: new Date().toISOString(),
-            };
-            const docRef = await insertSession({ table: 'therapy_sessions', data: sessionData});
-            sessionStorage.setItem('sessionId', docRef);
+            // Here you would insert the session into Supabase and get an ID
+            const sessionId = `session_${Date.now()}`; // Placeholder ID
+            sessionStorage.setItem('sessionId', sessionId);
             router.push('/analysis');
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error Saving Session', description: error.message });
         }
     } else {
         // Handle guest mode
-        sessionStorage.setItem('sessionData', JSON.stringify({ messages }));
         router.push('/analysis');
     }
   };

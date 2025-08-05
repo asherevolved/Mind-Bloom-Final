@@ -14,8 +14,6 @@ import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile } from 'firebase/auth';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 
 type Preferences = {
@@ -40,37 +38,24 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const router = useRouter();
 
-  const allUsers = useQuery(api.crud.list, user ? { table: 'users' } : 'skip');
-  const updateUser = useMutation(api.crud.update);
 
   useEffect(() => {
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
           if (currentUser) {
               setIsGuest(false);
-              const userDoc: any = allUsers?.find((u: any) => u.uid === currentUser.uid);
-
-              if (userDoc) {
-                  setUser({
-                      uid: currentUser.uid,
-                      _id: userDoc._id,
-                      email: currentUser.email || '',
-                      name: userDoc.name || currentUser.displayName || '',
-                      photoURL: currentUser.photoURL || '',
-                  });
-                  setName(userDoc.name || currentUser.displayName || '');
-                  setPreferences({
-                      darkMode: userDoc.darkMode ?? true,
-                      notificationFrequency: userDoc.notificationFrequency ?? 'daily',
-                  });
-              } else if (allUsers !== undefined) { // ensure query has run
-                  setUser({ // fallback user object
-                      uid: currentUser.uid,
-                      email: currentUser.email || '',
-                      name: currentUser.displayName || '',
-                      photoURL: currentUser.photoURL || '',
-                  });
-                  setName(currentUser.displayName || '');
-              }
+              // Fetch user profile and preferences from Supabase
+              // For now, using placeholder data
+              setUser({
+                  uid: currentUser.uid,
+                  email: currentUser.email || '',
+                  name: currentUser.displayName || '',
+                  photoURL: currentUser.photoURL || '',
+              });
+              setName(currentUser.displayName || '');
+              setPreferences({
+                  darkMode: true,
+                  notificationFrequency: 'daily',
+              });
           } else {
               const guest = sessionStorage.getItem('isGuest') === 'true';
               setIsGuest(guest);
@@ -82,13 +67,13 @@ export default function SettingsPage() {
           setIsLoading(false);
       });
       return () => unsubscribe();
-  }, [allUsers]);
+  }, []);
 
   const handleUpdateProfile = async () => {
-    if (!user || isGuest || !auth.currentUser || !user._id) return;
+    if (!user || isGuest || !auth.currentUser) return;
     try {
         await updateProfile(auth.currentUser, { displayName: name });
-        await updateUser({table: 'users', id: user._id, patch: { name }});
+        // Logic to update profile in Supabase
         toast({ title: 'Profile Updated!' });
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Update failed', description: error.message});
@@ -96,13 +81,13 @@ export default function SettingsPage() {
   }
 
   const handleUpdatePreferences = async (newPrefs: Partial<Preferences>) => {
-      if (!user || !preferences || isGuest || !user._id) return;
+      if (!user || !preferences || isGuest) return;
       
       const updatedPrefs = { ...preferences, ...newPrefs, darkMode: true };
       setPreferences(updatedPrefs);
 
       try {
-        await updateUser({ table: 'users', id: user._id, patch: updatedPrefs});
+        // Logic to update preferences in Supabase
         toast({ title: 'Preferences Saved!' });
       } catch (error: any) {
           toast({ variant: 'destructive', title: 'Update Failed', description: error.message });
@@ -173,7 +158,7 @@ export default function SettingsPage() {
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" type="email" value={user?.email || 'guest@example.com'} disabled />
               </div>
-              <Button onClick={handleUpdateProfile} disabled={isGuest || !user?._id}>Save Changes</Button>
+              <Button onClick={handleUpdateProfile} disabled={isGuest}>Save Changes</Button>
             </CardContent>
           </Card>
 

@@ -6,8 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
 import Link from 'next/link';
-import { useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
@@ -30,13 +28,6 @@ export default function DashboardPage() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    const users = useQuery(api.crud.list, userId ? { table: 'users' } : 'skip');
-    const moodLogs = useQuery(api.crud.listByUser, userId ? { table: 'mood_logs', userId: userId } : 'skip');
-    const tasks = useQuery(api.crud.listByUser, userId ? { table: 'tasks', userId: userId } : 'skip');
-    const badges = useQuery(api.crud.listByUser, userId ? { table: 'badges', userId: userId } : 'skip');
-    const journalEntries = useQuery(api.crud.listByUser, userId ? { table: 'journal', userId: userId } : 'skip');
-    const habits = useQuery(api.crud.listByUser, userId ? { table: 'habits', userId: userId } : 'skip');
-
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
@@ -49,62 +40,32 @@ export default function DashboardPage() {
     }, []);
 
     useEffect(() => {
-        const areQueriesReady = users !== undefined && moodLogs !== undefined && tasks !== undefined && badges !== undefined && journalEntries !== undefined && habits !== undefined;
-
-        if (userId && areQueriesReady) {
+        if (userId) {
             const processData = async () => {
-                const currentUser: any = users.find((u: any) => u.uid === userId);
-                if (!currentUser) {
-                    setIsLoading(false);
-                    return;
-                }
-
-                // Mood
-                moodLogs.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const moodLogged = moodLogs.some((log: any) => new Date(log.createdAt) >= today);
+                setIsLoading(true);
+                // In a real app, you would fetch all this data from Supabase
+                // For now, we'll use placeholder data.
                 
-                // Tasks
-                const totalTasks = tasks.length;
-                const completedTasks = tasks.filter(task => task.is_completed).length;
-                const tasksLeft = totalTasks - completedTasks;
-
-                // Badges
-                const badgesUnlocked = badges.length;
-                
-                // Journal
-                journalEntries.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-                const lastJournalEntry = journalEntries.length > 0 ? journalEntries[0].entry : null;
-                
-                // Habits
-                habits.sort((a,b) => b.streak_count - a.streak_count);
-                const habitStreaks = habits.slice(0, 2).map(habit => ({ name: habit.title, streak: habit.streak_count }));
-                
-                // AI Tip
-                const recentMoodNote = moodLogs.length > 0 ? moodLogs[0].note : 'feeling neutral';
                 const tip = await getAiTip({
-                    onboardingGoals: currentUser?.supportTags || [],
-                    recentMood: recentMoodNote,
+                    onboardingGoals: ['Anxiety', 'Focus'],
+                    recentMood: 'feeling okay',
                 });
-                
+
                 setData({
-                    name: currentUser?.name || 'Explorer',
-                    moodLogged,
-                    tasksLeft,
-                    totalTasks,
-                    badgesUnlocked,
-                    lastJournalEntry,
-                    habitStreaks,
+                    name: auth.currentUser?.displayName || 'Explorer',
+                    moodLogged: true,
+                    tasksLeft: 2,
+                    totalTasks: 5,
+                    badgesUnlocked: 3,
+                    lastJournalEntry: "Today was a good day. I felt productive.",
+                    habitStreaks: [{ name: 'Meditate', streak: 5 }, { name: 'Read', streak: 12 }],
                     aiTip: tip.tip,
                 });
                 setIsLoading(false);
             };
             processData();
-        } else if (!userId) {
-            setIsLoading(false);
         }
-    }, [userId, users, moodLogs, tasks, badges, journalEntries, habits]);
+    }, [userId]);
 
     if (isLoading) {
         return (

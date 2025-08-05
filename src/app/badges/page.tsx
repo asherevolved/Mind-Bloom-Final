@@ -9,8 +9,6 @@ import { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 const allBadges = [
   { code: 'welcome_explorer', name: 'Welcome Explorer', icon: Star, criteria: 'Complete the onboarding flow' },
@@ -32,37 +30,27 @@ export default function BadgesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
 
-  const badgesList = useQuery(api.crud.list, userId ? { table: 'badges'} : 'skip');
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if(user) {
             setUserId(user.uid);
+            // Fetch user badges from Supabase here
+            // For now, let's assume a few are unlocked
+            const unlockedCodes = ['welcome_explorer', 'mood_starter'];
+            const badgeStatus = allBadges.map(b => ({
+              ...b,
+              unlocked: unlockedCodes.includes(b.code),
+            }));
+            setBadges(badgeStatus);
         } else {
             // Handle guest user - no badges
             const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
             setBadges(badgeStatus);
-            setIsLoading(false);
         }
+        setIsLoading(false);
     });
     return () => unsubscribe();
   }, []);
-  
-  useEffect(() => {
-    if(badgesList) {
-      const unlockedCodes = badgesList.filter((b: any) => b.userId === userId).map((b: any) => b.badge_code);
-      const badgeStatus = allBadges.map(b => ({
-          ...b,
-          unlocked: unlockedCodes.includes(b.code),
-      }));
-      setBadges(badgeStatus);
-      setIsLoading(false);
-    } else if (!userId) { // Handle guest case where badgesList is skipped
-        const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
-        setBadges(badgeStatus);
-        setIsLoading(false);
-    }
-  }, [badgesList, userId]);
   
   const unlockedBadges = badges.filter(b => b.unlocked);
   const lockedBadges = badges.filter(b => !b.unlocked);

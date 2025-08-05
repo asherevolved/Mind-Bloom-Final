@@ -2,8 +2,6 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { TasksClientPage } from './tasks-client-page';
-import { useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
@@ -31,12 +29,17 @@ const suggestedTasksList: SuggestedTask[] = [
 
 export default function TasksPage() {
     const [userId, setUserId] = useState<string | null>(null);
-    const userTasks = useQuery(api.crud.listByUser, userId ? { table: 'tasks', userId } : 'skip');
+    const [userTasks, setUserTasks] = useState<Task[] | null>(null);
     
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
+                // Fetch tasks from Supabase here
+                // For now, setting to empty array
+                setUserTasks([]);
+            } else {
+                setUserTasks([]);
             }
         });
         return () => unsubscribe();

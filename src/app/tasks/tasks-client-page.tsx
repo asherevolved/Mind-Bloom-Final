@@ -11,8 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Task, SuggestedTask } from './page';
-import { useMutation } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
@@ -25,14 +23,11 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
     const [tasks, setTasks] = useState<Task[]>(initialTasks);
     const [suggestedTasks] = useState<SuggestedTask[]>(initialSuggestedTasks);
     const [newTaskText, setNewTaskText] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    
-    const insertTask = useMutation(api.crud.insert);
-    const updateTask = useMutation(api.crud.update);
-    const deleteTask = useMutation(api.crud.remove);
+    const [isLoading, setIsLoading] = useState(!initialTasks);
 
     useEffect(() => {
       setTasks(initialTasks);
+      if(initialTasks) setIsLoading(false);
     }, [initialTasks]);
 
     const handleAddTask = async () => {
@@ -40,14 +35,9 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
         setIsLoading(true);
 
         try {
-            await insertTask({ table: 'tasks', data: {
-                title: newTaskText,
-                category: 'Manual',
-                is_completed: false,
-                createdAt: new Date().toISOString(),
-                userId,
-            }});
+            // Logic to insert task into Supabase
             setNewTaskText('');
+            // Refetch tasks
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
@@ -61,14 +51,9 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
         }
         
         try {
-            await insertTask({ table: 'tasks', data: {
-                title: task.title,
-                category: task.category,
-                is_completed: false,
-                createdAt: new Date().toISOString(),
-                userId,
-            }});
+            // Logic to insert task into Supabase
             toast({ title: "Task Added!", description: `"${task.title}" has been added to your list.` });
+            // Refetch tasks
         } catch(error: any) {
             toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
         }
@@ -78,7 +63,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
         if (!userId) return;
 
         try {
-            await updateTask({ table: 'tasks', id: taskId, patch: { is_completed: isCompleted } });
+            // Logic to update task in Supabase
+            // Refetch tasks
         } catch(error) {
              toast({ variant: 'destructive', title: 'Error updating task' });
         }
@@ -88,7 +74,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
         if (!userId) return;
 
         try {
-            await deleteTask({ table: 'tasks', id: taskId });
+            // Logic to delete task from Supabase
+            // Refetch tasks
         } catch (error) {
             toast({ variant: 'destructive', title: 'Error deleting task' });
         }
@@ -129,7 +116,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId }:
                   <Button size="icon" onClick={handleAddTask} disabled={isLoading}><Plus /></Button>
                 </div>
                 <div className="space-y-3">
-                  {isLoading && tasks.length === 0 ? (
+                  {isLoading ? (
                     [...Array(3)].map((_,i) => <Skeleton key={i} className="h-12 w-full rounded-md" />)
                   ) : (
                     tasks.map(task => (

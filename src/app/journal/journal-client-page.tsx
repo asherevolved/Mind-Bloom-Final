@@ -15,8 +15,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMutation } from 'convex/react';
-import { api } from 'convex/_generated/api';
 import type { JournalEntry } from './page';
 
 interface JournalClientPageProps {
@@ -29,15 +27,13 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
   const [moodTag, setMoodTag] = useState('');
   const [entry, setEntry] = useState('');
   const [pastEntries, setPastEntries] = useState<JournalEntry[]>(initialEntries);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!initialEntries);
   const { toast } = useToast();
   
-  const insertEntry = useMutation(api.crud.insert);
-  const listBadges = useMutation(api.crud.list);
-  const insertBadge = useMutation(api.crud.insert);
   
   useEffect(() => {
     setPastEntries(initialEntries);
+    if(initialEntries) setIsLoading(false);
   }, [initialEntries]);
 
   const handleSaveEntry = async () => {
@@ -52,19 +48,14 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
     
     setIsLoading(true);
     try {
-        await insertEntry({ table: 'journal', data: {
-            title,
-            mood_tag: moodTag,
-            entry,
-            createdAt: new Date().toISOString(),
-            userId,
-        }});
+        // Logic to save entry to Supabase
         
         toast({ title: 'Entry Saved!', description: 'Your journal has been updated.'});
         setTitle('');
         setMoodTag('');
         setEntry('');
         await checkBadges();
+        // Refetch entries
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Error saving entry', description: error.message});
     }
@@ -75,24 +66,13 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
       if (!userId) return;
 
       const badgeCode = 'thought_starter';
-      const userBadges: any[] = await listBadges({table: 'badges'}) || [];
-      const badgeDoc = userBadges.find(b => b.userId === userId && b.badge_code === badgeCode);
-
-      if (!badgeDoc) {
-          await awardBadge(badgeCode, 'Thought Starter');
-      }
+      // Logic to check for badge in Supabase and award if needed
   }
 
   const awardBadge = async (code: string, name: string) => {
     if (!userId) return;
     try {
-        await insertBadge({ table: 'badges', data: {
-            badge_code: code,
-            badge_name: name,
-            unlockedAt: new Date().toISOString(),
-            userId,
-        }});
-
+        // Logic to save badge to Supabase
         toast({
             title: 'Badge Unlocked!',
             description: `You've earned the "${name}" badge!`,
@@ -132,7 +112,7 @@ export function JournalClientPage({ initialEntries, userId }: JournalClientPageP
 
         <section>
           <h2 className="font-headline text-2xl font-bold mb-4">Past Entries</h2>
-          {isLoading && pastEntries.length === 0 ? (
+          {isLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />

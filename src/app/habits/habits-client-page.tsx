@@ -10,8 +10,6 @@ import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isToday, subDays } from 'date-fns';
-import { useMutation } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -32,35 +30,24 @@ interface HabitsClientPageProps {
 export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProps) {
   const [habits, setHabits] = useState<Habit[]>(initialHabits);
   const [newHabitTitle, setNewHabitTitle] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(!initialHabits);
   const { toast } = useToast();
 
-  const insertHabit = useMutation(api.crud.insert);
-  const updateHabit = useMutation(api.crud.update);
 
   useEffect(() => {
     setHabits(initialHabits);
+    if(initialHabits) setIsLoading(false);
   }, [initialHabits]);
 
   const handleAddHabit = async () => {
     if (!userId || !newHabitTitle.trim()) return;
     setIsLoading(true);
     try {
-        await insertHabit({
-          table: 'habits',
-          data: {
-            title: newHabitTitle,
-            category: 'General',
-            streak_count: 0,
-            last_completed: null,
-            createdAt: new Date().toISOString(),
-            userId
-          }
-        });
+        // Logic to insert habit into Supabase
         
         setNewHabitTitle('');
         toast({ title: 'Habit Added!', description: `You're now tracking "${newHabitTitle}".` });
-
+        // Refetch habits after adding
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Error adding habit', description: error.message });
     }
@@ -78,14 +65,8 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
       const newLastCompleted = new Date().toISOString();
       
       try {
-        await updateHabit({
-          table: 'habits',
-          id: habit._id,
-          patch: {
-            streak_count: newStreak,
-            last_completed: newLastCompleted,
-          }
-        });
+        // Logic to update habit in Supabase
+        // Refetch habits after updating
       } catch (error: any) {
           toast({ variant: 'destructive', title: 'Error updating habit', description: error.message });
       }
@@ -118,7 +99,7 @@ export function HabitsClientPage({ initialHabits, userId }: HabitsClientPageProp
         </Card>
         
         <div className="space-y-6">
-          {isLoading && habits.length === 0 ? (
+          {isLoading ? (
             [...Array(2)].map((_,i) => <Skeleton key={i} className="h-40 w-full" />)
           ) : (
             habits.map((habit) => {

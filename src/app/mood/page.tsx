@@ -2,8 +2,6 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { MoodClientPage } from './mood-client-page';
-import { useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
@@ -20,13 +18,16 @@ export type MoodLog = {
 
 export default function MoodPage() {
   const [userId, setUserId] = useState<string | null>(null);
-  const userMoods = useQuery(api.crud.listByUser, userId ? { table: 'mood_logs', userId: userId } : 'skip');
+  const [userMoods, setUserMoods] = useState<MoodLog[] | null>(null);
   const [sortedMoods, setSortedMoods] = useState<MoodLog[]>([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
             setUserId(user.uid);
+            // Fetch moods from Supabase here
+            // For now, setting to empty array
+            setUserMoods([]);
         } else {
             setSortedMoods([]);
         }

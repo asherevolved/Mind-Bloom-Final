@@ -2,8 +2,6 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { JournalClientPage } from './journal-client-page';
-import { useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
@@ -19,13 +17,16 @@ export type JournalEntry = {
 
 export default function JournalPage() {
     const [userId, setUserId] = useState<string | null>(null);
-    const userEntries = useQuery(api.crud.listByUser, userId ? { table: 'journal', userId } : 'skip');
+    const [userEntries, setUserEntries] = useState<JournalEntry[]>([]);
     const [sortedEntries, setSortedEntries] = useState<JournalEntry[]>([]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
+                // Fetch entries from Supabase here.
+                // For now, setting to empty array.
+                setUserEntries([]);
             } else {
                 setSortedEntries([]);
             }

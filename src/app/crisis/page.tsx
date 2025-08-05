@@ -9,15 +9,11 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from 'convex/_generated/api';
 
 
 export default function CrisisPage() {
   const { toast } = useToast();
-  const insertBadge = useMutation(api.crud.insert);
   const [userId, setUserId] = useState<string|null>(null);
-  const userBadges = useQuery(api.crud.list, userId ? { table: 'badges' } : 'skip');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -30,18 +26,14 @@ export default function CrisisPage() {
 
   useEffect(() => {
     const awardBadge = async () => {
-        if (!userId || !userBadges) return;
+        if (!userId) return;
 
         const badgeCode = 'help_seeker';
-        const badgeDoc = userBadges.find((b: any) => b.userId === userId && b.badge_code === badgeCode);
+        // Logic to check if badge exists in Supabase and award if not
+        const hasBadge = false; // Replace with actual check
 
-        if (!badgeDoc) {
-            await insertBadge({ table: 'badges', data: {
-                badge_code: badgeCode,
-                badge_name: 'Help Seeker',
-                unlockedAt: new Date().toISOString(),
-                userId: userId,
-            }});
+        if (!hasBadge) {
+            // Logic to award badge in Supabase
             toast({
                 title: 'Badge Unlocked!',
                 description: `You've earned the "Help Seeker" badge. It's okay to ask for help.`,
@@ -51,7 +43,7 @@ export default function CrisisPage() {
     };
 
     awardBadge();
-  }, [userId, userBadges, insertBadge, toast]);
+  }, [userId, toast]);
 
 
   return (
