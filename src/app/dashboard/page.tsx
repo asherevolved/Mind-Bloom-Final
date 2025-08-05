@@ -68,7 +68,7 @@ export default function DashboardPage() {
                     .eq('user_id', currentUser.id),
                 supabase
                     .from('user_badges')
-                    .select('*', { count: 'exact', head: true })
+                    .select('*', { count: 'exact' }) // FIX: Removed head: true
                     .eq('user_id', currentUser.id),
                 supabase
                     .from('journal_entries')
@@ -97,10 +97,15 @@ export default function DashboardPage() {
             const lastMood = moodData?.[0] ? new Date(moodData[0].created_at) : null;
             const moodLoggedToday = lastMood ? isToday(lastMood) : false;
             
-            const tip = await getAiTip({
-                onboardingGoals: profileData.support_tags || [],
-                recentMood: moodData?.[0]?.note || 'neutral',
-            });
+            let tip = { tip: "Stay positive today and focus on your goals!" }; // Default tip
+            try {
+              tip = await getAiTip({
+                  onboardingGoals: profileData.support_tags || [],
+                  recentMood: moodData?.[0]?.note || 'neutral',
+              });
+            } catch (e) {
+                console.warn('AI tip generation failed:', e);
+            }
             
             const sortedHabits = habitsData?.sort((a,b) => b.streak_count - a.streak_count).slice(0, 2) || [];
 
@@ -111,7 +116,10 @@ export default function DashboardPage() {
                 totalTasks: tasksData?.length || 0,
                 badgesUnlocked: badgesCount || 0,
                 lastJournalEntry: journalData?.[0]?.entry || null,
-                habitStreaks: sortedHabits.map(h => ({ name: h.title, streak: h.streak_count })),
+                habitStreaks: sortedHabits.map(h => ({ 
+                    name: h.title ?? 'Unnamed Habit', 
+                    streak: h.streak_count ?? 0
+                })),
                 aiTip: tip.tip,
             });
 
@@ -148,6 +156,7 @@ export default function DashboardPage() {
                      <Skeleton className="h-10 w-1/2 mb-8" />
                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         <Skeleton className="h-48 col-span-1 sm:col-span-2" />
+                        <Skeleton className="h-48" />
                         <Skeleton className="h-48" />
                         <Skeleton className="h-48" />
                         <Skeleton className="h-48" />
