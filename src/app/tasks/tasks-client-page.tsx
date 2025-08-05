@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -17,7 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
@@ -36,7 +37,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newSubTasks, setNewSubTasks] = useState<{ title: string }[]>([]);
     const [newSubTaskInput, setNewSubTaskInput] = useState('');
-    const [newTaskDateTime, setNewTaskDateTime] = useState('');
+    const [newTaskDate, setNewTaskDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [newTaskTime, setNewTaskTime] = useState('');
     const [newDuration, setNewDuration] = useState(30);
     
     const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
@@ -69,7 +71,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
         setNewTaskTitle('');
         setNewSubTasks([]);
         setNewSubTaskInput('');
-        setNewTaskDateTime('');
+        setNewTaskDate(format(new Date(), 'yyyy-MM-dd'));
+        setNewTaskTime('');
         setNewDuration(30);
     };
 
@@ -90,6 +93,8 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
             return
         };
         setIsSubmitting(true);
+        
+        const taskDateTime = (newTaskDate && newTaskTime) ? `${newTaskDate}T${newTaskTime}:00` : null;
 
         try {
             const { data: taskData, error } = await supabase
@@ -98,7 +103,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                     user_id: userId, 
                     title: newTaskTitle, 
                     category: 'General', 
-                    task_datetime: newTaskDateTime || null,
+                    task_datetime: taskDateTime,
                     duration_minutes: newDuration
                 })
                 .select('id')
@@ -136,7 +141,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
 
         const baseUrl = "https://www.google.com/calendar/render?action=TEMPLATE";
 
-        const startDate = new Date(task.task_datetime);
+        const startDate = parseISO(task.task_datetime);
         const endDate = new Date(startDate.getTime() + (task.duration_minutes || 30) * 60000);
         
         // Format YYYYMMDDTHHMMSSZ
@@ -225,7 +230,10 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                         <CardTitle>Today's Focus</CardTitle>
                         <CardDescription>{completedCount} of {initialTasks.length} tasks completed. Keep it up!</CardDescription>
                     </div>
-                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                    <Dialog open={isDialogOpen} onOpenChange={(isOpen) => {
+                        setIsDialogOpen(isOpen);
+                        if (!isOpen) resetDialog();
+                    }}>
                         <DialogTrigger asChild>
                             <Button disabled={!userId}><Plus className="mr-2 h-4 w-4"/> New Task</Button>
                         </DialogTrigger>
@@ -239,9 +247,15 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                     <Label htmlFor="title">Task Name</Label>
                                     <Input id="title" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="datetime">Task Date & Time (optional)</Label>
-                                    <Input id="datetime" type="datetime-local" value={newTaskDateTime} onChange={e => setNewTaskDateTime(e.target.value)} />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="date">Date</Label>
+                                        <Input id="date" type="date" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="time">Time (optional)</Label>
+                                        <Input id="time" type="time" value={newTaskTime} onChange={e => setNewTaskTime(e.target.value)} />
+                                    </div>
                                 </div>
                                  <div className="space-y-2">
                                     <Label htmlFor="duration">Duration (minutes)</Label>
@@ -295,7 +309,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                                 <span>{completedSubTasks} of {totalSubTasks} steps</span>
                                             )}
                                             {task.task_datetime && (
-                                                <span className="font-mono">{format(new Date(task.task_datetime), 'PPp')}</span>
+                                                <span className="font-mono">{format(parseISO(task.task_datetime), 'PPp')}</span>
                                             )}
                                         </div>
                                         <Progress value={progress} className="h-2" />
@@ -362,6 +376,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                     <Button className="w-full" onClick={() => {
                         setIsDialogOpen(true);
                         setNewTaskTitle(task.title);
+                        resetDialog();
                     }}><Plus className="mr-2 h-4 w-4" /> Add to My Tasks</Button>
                   </CardContent>
                 </Card>
@@ -379,3 +394,4 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
       </div>
   );
 }
+
