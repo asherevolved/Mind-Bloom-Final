@@ -37,9 +37,9 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
     const [newTaskTitle, setNewTaskTitle] = useState('');
     const [newSubTasks, setNewSubTasks] = useState<{ title: string }[]>([]);
     const [newSubTaskInput, setNewSubTaskInput] = useState('');
-    const [newTaskDate, setNewTaskDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const [newTaskDate, setNewTaskDate] = useState('');
     const [newTaskTime, setNewTaskTime] = useState('');
-    const [newDuration, setNewDuration] = useState(30);
+    const [newDuration, setNewDuration] = useState<number | undefined>(undefined);
     
     const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
 
@@ -71,9 +71,9 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
         setNewTaskTitle('');
         setNewSubTasks([]);
         setNewSubTaskInput('');
-        setNewTaskDate(format(new Date(), 'yyyy-MM-dd'));
+        setNewTaskDate('');
         setNewTaskTime('');
-        setNewDuration(30);
+        setNewDuration(undefined);
     };
 
     const handleAddSubTask = () => {
@@ -96,16 +96,25 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
         
         const taskDateTime = (newTaskDate && newTaskTime) ? `${newTaskDate}T${newTaskTime}:00` : null;
 
+        const taskToInsert: any = {
+            user_id: userId, 
+            title: newTaskTitle, 
+            category: 'General', 
+        };
+
+        if (taskDateTime) {
+            taskToInsert.task_datetime = taskDateTime;
+        }
+
+        if (newDuration) {
+            taskToInsert.duration_minutes = newDuration;
+        }
+
+
         try {
             const { data: taskData, error } = await supabase
                 .from('tasks')
-                .insert({ 
-                    user_id: userId, 
-                    title: newTaskTitle, 
-                    category: 'General', 
-                    task_datetime: taskDateTime,
-                    duration_minutes: newDuration
-                })
+                .insert(taskToInsert)
                 .select('id')
                 .single();
 
@@ -249,7 +258,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label htmlFor="date">Date</Label>
+                                        <Label htmlFor="date">Date (optional)</Label>
                                         <Input id="date" type="date" value={newTaskDate} onChange={e => setNewTaskDate(e.target.value)} />
                                     </div>
                                     <div className="space-y-2">
@@ -258,12 +267,12 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                     </div>
                                 </div>
                                  <div className="space-y-2">
-                                    <Label htmlFor="duration">Duration (minutes)</Label>
-                                    <Input id="duration" type="number" value={newDuration} onChange={e => setNewDuration(parseInt(e.target.value) || 30)} />
+                                    <Label htmlFor="duration">Duration (minutes, optional)</Label>
+                                    <Input id="duration" type="number" value={newDuration === undefined ? '' : newDuration} onChange={e => setNewDuration(e.target.value === '' ? undefined : parseInt(e.target.value))} />
                                 </div>
                                 
                                 <div className="space-y-2">
-                                    <Label htmlFor="subtasks">Sub-tasks</Label>
+                                    <Label htmlFor="subtasks">Sub-tasks (optional)</Label>
                                     <div className="space-y-2">
                                         {newSubTasks.map((st, index) => (
                                             <div key={index} className="flex items-center gap-2">
@@ -374,9 +383,9 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                   </CardHeader>
                   <CardContent className="mt-auto">
                     <Button className="w-full" onClick={() => {
+                        resetDialog();
                         setIsDialogOpen(true);
                         setNewTaskTitle(task.title);
-                        resetDialog();
                     }}><Plus className="mr-2 h-4 w-4" /> Add to My Tasks</Button>
                   </CardContent>
                 </Card>
@@ -394,4 +403,3 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
       </div>
   );
 }
-
