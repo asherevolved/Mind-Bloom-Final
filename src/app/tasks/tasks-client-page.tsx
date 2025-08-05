@@ -6,12 +6,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Lightbulb, Plus, Trash2, Trophy } from 'lucide-react';
+import { Lightbulb, Plus, Trash2, Trophy, List, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Task, SuggestedTask } from './page';
 import { supabase } from '@/lib/supabase';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Progress } from '@/components/ui/progress';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
@@ -23,9 +27,18 @@ interface TasksClientPageProps {
 
 export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, isLoading, refetchTasks }: TasksClientPageProps) {
     const { toast } = useToast();
-    const [newTaskText, setNewTaskText] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+    // New Task Dialog State
+    const [newTaskTitle, setNewTaskTitle] = useState('');
+    const [newTaskPriority, setNewTaskPriority] = useState('Medium');
+    const [newSubTasks, setNewSubTasks] = useState<{ title: string }[]>([]);
+    const [newSubTaskInput, setNewSubTaskInput] = useState('');
+    const [newReminderInterval, setNewReminderInterval] = useState<number | null>(null);
     
+    const [expandedTasks, setExpandedTasks] = useState<Set<number>>(new Set());
+
     const awardBadge = async (code: string, name: string) => {
         if (!userId) return;
 
@@ -50,24 +63,62 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
         }
     };
 
-    const handleAddTask = async (title: string, category: string = 'General') => {
-        if (!userId || !title.trim()){
+    const resetDialog = () => {
+        setNewTaskTitle('');
+        setNewTaskPriority('Medium');
+        setNewSubTasks([]);
+        setNewSubTaskInput('');
+        setNewReminderInterval(null);
+    };
+
+    const handleAddSubTask = () => {
+        if (newSubTaskInput.trim()) {
+            setNewSubTasks([...newSubTasks, { title: newSubTaskInput.trim() }]);
+            setNewSubTaskInput('');
+        }
+    };
+    
+    const handleRemoveSubTask = (index: number) => {
+        setNewSubTasks(newSubTasks.filter((_, i) => i !== index));
+    };
+
+    const handleCreateTask = async () => {
+        if (!userId || !newTaskTitle.trim()){
             toast({variant: 'destructive', title: 'Error', description: 'You must be logged in and provide a title to add a task.'});
             return
         };
         setIsSubmitting(true);
 
         try {
-            const { error } = await supabase
+            const { data: taskData, error } = await supabase
                 .from('tasks')
-                .insert({ user_id: userId, title, category });
+                .insert({ 
+                    user_id: userId, 
+                    title: newTaskTitle, 
+                    category: 'General', 
+                    priority: newTaskPriority,
+                    reminder_interval: newReminderInterval,
+                })
+                .select('id')
+                .single();
 
             if (error) throw error;
+
+            const taskId = taskData.id;
             
-            toast({ title: 'Task Added!', description: `"${title}" has been added.` });
-            if (title === newTaskText) {
-                setNewTaskText('');
+            if (newSubTasks.length > 0) {
+                const subTasksToInsert = newSubTasks.map(st => ({
+                    task_id: taskId,
+                    user_id: userId,
+                    title: st.title
+                }));
+                const { error: subTaskError } = await supabase.from('sub_tasks').insert(subTasksToInsert);
+                if (subTaskError) throw subTaskError;
             }
+            
+            toast({ title: 'Task Added!', description: `"${newTaskTitle}" has been added.` });
+            resetDialog();
+            setIsDialogOpen(false);
             refetchTasks();
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error adding task', description: error.message });
@@ -75,45 +126,43 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
         setIsSubmitting(false);
     };
 
-    const handleAddSuggestedTask = async (task: SuggestedTask) => {
-        if (!userId) {
-            toast({ title: 'Task Added!', description: `(Guest) "${task.title}" has been added to your list. Sign up to save.` });
-            return;
-        }
-        await handleAddTask(task.title, task.category);
-    };
-
-    const handleToggleTask = async (taskId: number, isCompleted: boolean) => {
+    const handleToggleSubTask = async (subTaskId: number, isCompleted: boolean) => {
         if (!userId) return;
-
         try {
             const { error } = await supabase
-                .from('tasks')
+                .from('sub_tasks')
                 .update({ is_completed: isCompleted })
-                .eq('id', taskId);
-
-            if (error) throw error;
+                .eq('id', subTaskId);
             
-            if (isCompleted) {
-                await awardBadge('starter_tasker', 'Starter Tasker');
-            }
-
-            refetchTasks();
-        } catch(error: any) {
-             toast({ variant: 'destructive', title: 'Error updating task', description: error.message });
+            if(error) throw error;
+            refetchTasks(); // Refetch to update progress bar
+        } catch (error: any) {
+            toast({ variant: 'destructive', title: 'Error updating sub-task', description: error.message });
         }
     };
+    
+    const toggleTaskExpansion = (taskId: number) => {
+        setExpandedTasks(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(taskId)) {
+                newSet.delete(taskId);
+            } else {
+                newSet.add(taskId);
+            }
+            return newSet;
+        });
+    };
+
 
     const handleDeleteTask = async (taskId: number) => {
         if (!userId) return;
 
         try {
-            const { error } = await supabase
-                .from('tasks')
-                .delete()
-                .eq('id', taskId);
+            // First delete sub-tasks due to foreign key constraint
+            await supabase.from('sub_tasks').delete().eq('task_id', taskId);
+            // Then delete the main task
+            await supabase.from('tasks').delete().eq('id', taskId);
             
-            if (error) throw error;
             refetchTasks();
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error deleting task', description: error.message });
@@ -121,6 +170,15 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
     };
     
     const completedCount = initialTasks.filter(t => t.is_completed).length;
+
+    const getPriorityBadgeVariant = (priority: string) => {
+        switch(priority) {
+            case 'High': return 'destructive';
+            case 'Medium': return 'secondary';
+            case 'Low': return 'outline';
+            default: return 'outline';
+        }
+    }
 
   return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -140,44 +198,128 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
           <TabsContent value="my-tasks" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle>Today's Focus</CardTitle>
-                <CardDescription>{completedCount} of {initialTasks.length} tasks completed. Keep it up!</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex gap-2">
-                  <Input 
-                    placeholder="Add a new task..." 
-                    value={newTaskText} 
-                    onChange={(e) => setNewTaskText(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddTask(newTaskText)}
-                    disabled={isSubmitting || !userId}
-                    />
-                  <Button size="icon" onClick={() => handleAddTask(newTaskText)} disabled={isSubmitting || !newTaskText.trim() || !userId}><Plus /></Button>
+                <div className="flex justify-between items-center">
+                    <div>
+                        <CardTitle>Today's Focus</CardTitle>
+                        <CardDescription>{completedCount} of {initialTasks.length} tasks completed. Keep it up!</CardDescription>
+                    </div>
+                    <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button disabled={!userId}><Plus className="mr-2 h-4 w-4"/> New Task</Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[425px]">
+                            <DialogHeader>
+                                <DialogTitle>Create New Task</DialogTitle>
+                                <DialogDescription>Fill out the details for your new task.</DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="title">Task Name</Label>
+                                    <Input id="title" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="priority">Priority</Label>
+                                    <Select value={newTaskPriority} onValueChange={setNewTaskPriority}>
+                                        <SelectTrigger id="priority">
+                                            <SelectValue placeholder="Select priority" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Low">Low</SelectItem>
+                                            <SelectItem value="Medium">Medium</SelectItem>
+                                            <SelectItem value="High">High</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="subtasks">Sub-tasks</Label>
+                                    <div className="space-y-2">
+                                        {newSubTasks.map((st, index) => (
+                                            <div key={index} className="flex items-center gap-2">
+                                                <Input value={st.title} readOnly className="bg-muted"/>
+                                                <Button variant="ghost" size="icon" onClick={() => handleRemoveSubTask(index)}><X className="h-4 w-4"/></Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Input id="subtasks" placeholder="Add a sub-task..." value={newSubTaskInput} onChange={(e) => setNewSubTaskInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddSubTask()} />
+                                        <Button onClick={handleAddSubTask}>Add</Button>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="reminder">Reminder Interval (minutes, optional)</Label>
+                                    <Input id="reminder" type="number" value={newReminderInterval ?? ''} onChange={(e) => setNewReminderInterval(e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g., 60"/>
+                                    <p className="text-xs text-muted-foreground">Note: External notifications are not supported in this prototype.</p>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button variant="ghost" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+                                <Button onClick={handleCreateTask} disabled={isSubmitting || !newTaskTitle.trim()}>
+                                    {isSubmitting ? 'Creating...' : 'Create Task'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
-                <div className="space-y-3">
-                  {isLoading ? (
-                    [...Array(3)].map((_,i) => <Skeleton key={i} className="h-12 w-full rounded-md" />)
-                  ) : initialTasks && initialTasks.length > 0 ? (
-                    initialTasks.map(task => (
-                      <div key={task.id} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
-                        <div className="flex items-center gap-3">
-                           <Checkbox id={task.id.toString()} checked={task.is_completed} onCheckedChange={(checked) => handleToggleTask(task.id, !!checked)} />
-                           <label htmlFor={task.id.toString()} className="text-sm font-medium data-[done=true]:line-through data-[done=true]:text-muted-foreground" data-done={task.is_completed}>{task.title}</label>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">{task.category}</Badge>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteTask(task.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {isLoading ? (
+                    [...Array(3)].map((_,i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)
+                ) : initialTasks && initialTasks.length > 0 ? (
+                    initialTasks.map(task => {
+                        const completedSubTasks = task.sub_tasks?.filter(st => st.is_completed).length || 0;
+                        const totalSubTasks = task.sub_tasks?.length || 0;
+                        const progress = totalSubTasks > 0 ? (completedSubTasks / totalSubTasks) * 100 : task.is_completed ? 100 : 0;
+                        const isExpanded = expandedTasks.has(task.id);
+
+                        return (
+                            <Card key={task.id} className="p-3 hover:bg-accent/50">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex-1 space-y-2">
+                                        <div className="flex items-center gap-3">
+                                            <p className="font-medium">{task.title}</p>
+                                        </div>
+                                        <Progress value={progress} className="h-2" />
+                                    </div>
+                                    <div className="flex items-center gap-2 ml-4">
+                                        <Badge variant={getPriorityBadgeVariant(task.priority)}>{task.priority}</Badge>
+                                        {totalSubTasks > 0 && (
+                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleTaskExpansion(task.id)}>
+                                                {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                                            </Button>
+                                        )}
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDeleteTask(task.id)}>
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                                {isExpanded && totalSubTasks > 0 && (
+                                    <div className="mt-4 pl-4 border-l-2 ml-2 space-y-2">
+                                        {task.sub_tasks?.map(subtask => (
+                                            <div key={subtask.id} className="flex items-center gap-3">
+                                                <Checkbox 
+                                                    id={`subtask-${subtask.id}`} 
+                                                    checked={subtask.is_completed} 
+                                                    onCheckedChange={(checked) => handleToggleSubTask(subtask.id, !!checked)} 
+                                                />
+                                                <label 
+                                                    htmlFor={`subtask-${subtask.id}`} 
+                                                    className="text-sm font-medium data-[done=true]:line-through data-[done=true]:text-muted-foreground" 
+                                                    data-done={subtask.is_completed}
+                                                >
+                                                    {subtask.title}
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </Card>
+                        )
+                    })
+                ) : (
                     <div className="text-center text-muted-foreground p-8">
                       {!userId ? "Please log in to manage your tasks." : "You have no tasks. Add one above!"}
                     </div>
-                  )}
-                </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -194,7 +336,10 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                     <CardDescription>{task.description}</CardDescription>
                   </CardHeader>
                   <CardContent className="mt-auto">
-                    <Button className="w-full" onClick={() => handleAddSuggestedTask(task)}><Plus className="mr-2 h-4 w-4" /> Add to My Tasks</Button>
+                    <Button className="w-full" onClick={() => {
+                        setIsDialogOpen(true);
+                        setNewTaskTitle(task.title);
+                    }}><Plus className="mr-2 h-4 w-4" /> Add to My Tasks</Button>
                   </CardContent>
                 </Card>
               ))}

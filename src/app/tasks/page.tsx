@@ -6,12 +6,21 @@ import { supabase } from '@/lib/supabase';
 import { useEffect, useState, useCallback } from 'react';
 import { User } from '@supabase/supabase-js';
 
+type SubTask = {
+  id: number;
+  title: string;
+  is_completed: boolean;
+};
+
 export type Task = {
   id: number;
   title: string;
   category: string;
   is_completed: boolean;
   user_id: string;
+  priority: 'High' | 'Medium' | 'Low';
+  reminder_interval: number | null;
+  sub_tasks: SubTask[];
 };
 
 export type SuggestedTask = {
@@ -35,14 +44,24 @@ export default function TasksPage() {
     const fetchTasks = useCallback(async (uid: string) => {
         setIsLoading(true);
         try {
+            // Fetch tasks and their sub_tasks in one go.
+            // The RPC function `get_tasks_with_subtasks` needs to be created in Supabase.
             const { data, error } = await supabase
-                .from('tasks')
-                .select('*')
-                .eq('user_id', uid)
-                .order('created_at', { ascending: false });
+                .rpc('get_tasks_with_subtasks', { user_id_param: uid });
 
             if (error) throw error;
-            setUserTasks(data || []);
+            
+            // The data needs to be mapped to calculate the is_completed status for the parent task
+            const processedTasks = data.map((task: any) => {
+                const totalSubTasks = task.sub_tasks.length;
+                const completedSubTasks = task.sub_tasks.filter((st: SubTask) => st.is_completed).length;
+                return {
+                    ...task,
+                    is_completed: totalSubTasks > 0 && completedSubTasks === totalSubTasks
+                }
+            });
+
+            setUserTasks(processedTasks || []);
         } catch (error) {
             console.error("Error fetching tasks:", error);
             setUserTasks([]);
