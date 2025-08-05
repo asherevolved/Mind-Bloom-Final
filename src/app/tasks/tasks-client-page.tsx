@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Lightbulb, Plus, Trash2, Trophy, List, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Lightbulb, Plus, Trash2, Trophy, List, X, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
 interface TasksClientPageProps {
     initialTasks: Task[];
@@ -135,6 +136,11 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                 .eq('id', subTaskId);
             
             if(error) throw error;
+
+            if (isCompleted) {
+                awardBadge('starter_tasker', 'Starter Tasker');
+            }
+
             refetchTasks(); // Refetch to update progress bar
         } catch (error: any) {
             toast({ variant: 'destructive', title: 'Error updating sub-task', description: error.message });
@@ -263,25 +269,35 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
               </CardHeader>
               <CardContent className="space-y-3">
                 {isLoading ? (
-                    [...Array(3)].map((_,i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)
+                    [...Array(3)].map((_,i) => <Skeleton key={i} className="h-24 w-full rounded-md" />)
                 ) : initialTasks && initialTasks.length > 0 ? (
                     initialTasks.map(task => {
-                        const completedSubTasks = task.sub_tasks?.filter(st => st.is_completed).length || 0;
-                        const totalSubTasks = task.sub_tasks?.length || 0;
+                        const subTasks = task.sub_tasks || [];
+                        const completedSubTasks = subTasks.filter(st => st.is_completed).length;
+                        const totalSubTasks = subTasks.length;
                         const progress = totalSubTasks > 0 ? (completedSubTasks / totalSubTasks) * 100 : task.is_completed ? 100 : 0;
                         const isExpanded = expandedTasks.has(task.id);
 
                         return (
-                            <Card key={task.id} className="p-3 hover:bg-accent/50">
-                                <div className="flex items-center justify-between">
+                            <Card key={task.id} className="p-4 hover:bg-accent/50 transition-colors">
+                                <div className="flex items-start justify-between">
                                     <div className="flex-1 space-y-2">
-                                        <div className="flex items-center gap-3">
-                                            <p className="font-medium">{task.title}</p>
+                                        <p className="font-medium">{task.title}</p>
+                                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                            <Badge variant={getPriorityBadgeVariant(task.priority)}>{task.priority}</Badge>
+                                            {totalSubTasks > 0 && (
+                                                <span>{completedSubTasks} of {totalSubTasks} steps</span>
+                                            )}
+                                            {task.reminder_interval && (
+                                                <div className="flex items-center gap-1">
+                                                    <Clock className="h-3 w-3" />
+                                                    <span>Every {task.reminder_interval} min</span>
+                                                </div>
+                                            )}
                                         </div>
                                         <Progress value={progress} className="h-2" />
                                     </div>
-                                    <div className="flex items-center gap-2 ml-4">
-                                        <Badge variant={getPriorityBadgeVariant(task.priority)}>{task.priority}</Badge>
+                                    <div className="flex items-center gap-1 ml-4">
                                         {totalSubTasks > 0 && (
                                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleTaskExpansion(task.id)}>
                                                 {isExpanded ? <ChevronUp /> : <ChevronDown />}
@@ -294,7 +310,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                 </div>
                                 {isExpanded && totalSubTasks > 0 && (
                                     <div className="mt-4 pl-4 border-l-2 ml-2 space-y-2">
-                                        {task.sub_tasks?.map(subtask => (
+                                        {subTasks.map(subtask => (
                                             <div key={subtask.id} className="flex items-center gap-3">
                                                 <Checkbox 
                                                     id={`subtask-${subtask.id}`} 
@@ -303,8 +319,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                                 />
                                                 <label 
                                                     htmlFor={`subtask-${subtask.id}`} 
-                                                    className="text-sm font-medium data-[done=true]:line-through data-[done=true]:text-muted-foreground" 
-                                                    data-done={subtask.is_completed}
+                                                    className={cn("text-sm font-medium transition-colors", subtask.is_completed && "line-through text-muted-foreground")}
                                                 >
                                                     {subtask.title}
                                                 </label>

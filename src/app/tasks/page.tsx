@@ -44,20 +44,19 @@ export default function TasksPage() {
     const fetchTasks = useCallback(async (uid: string) => {
         setIsLoading(true);
         try {
-            // Fetch tasks and their sub_tasks in one go.
-            // The RPC function `get_tasks_with_subtasks` needs to be created in Supabase.
             const { data, error } = await supabase
                 .rpc('get_tasks_with_subtasks', { user_id_param: uid });
 
             if (error) throw error;
             
-            // The data needs to be mapped to calculate the is_completed status for the parent task
             const processedTasks = data.map((task: any) => {
-                const totalSubTasks = task.sub_tasks.length;
-                const completedSubTasks = task.sub_tasks.filter((st: SubTask) => st.is_completed).length;
+                const subTasks = task.sub_tasks || [];
+                const totalSubTasks = subTasks.length;
+                const completedSubTasks = subTasks.filter((st: SubTask) => st.is_completed).length;
                 return {
                     ...task,
-                    is_completed: totalSubTasks > 0 && completedSubTasks === totalSubTasks
+                    sub_tasks: subTasks,
+                    is_completed: totalSubTasks > 0 ? completedSubTasks === totalSubTasks : task.is_completed
                 }
             });
 
