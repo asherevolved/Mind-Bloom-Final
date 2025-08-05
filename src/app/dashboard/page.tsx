@@ -64,7 +64,7 @@ export default function DashboardPage() {
                     .limit(1),
                 supabase
                     .from('tasks')
-                    .select('is_completed', { count: 'exact' })
+                    .select('is_completed')
                     .eq('user_id', currentUser.id),
                 supabase
                     .from('user_badges')
@@ -103,6 +103,8 @@ export default function DashboardPage() {
                 onboardingGoals: profileData.support_tags || [],
                 recentMood: moodData?.[0]?.note || 'neutral',
             });
+            
+            const sortedHabits = habitsData?.sort((a,b) => b.streak_count - a.streak_count).slice(0, 2) || [];
 
             setData({
                 name: profileData.name || profileData.email || 'Explorer',
@@ -111,7 +113,7 @@ export default function DashboardPage() {
                 totalTasks: tasksData?.length || 0,
                 badgesUnlocked: badgesCount || 0,
                 lastJournalEntry: journalData?.[0]?.entry || null,
-                habitStreaks: habitsData?.sort((a,b) => b.streak_count - a.streak_count).slice(0, 2).map(h => ({ name: h.title, streak: h.streak_count })) || [],
+                habitStreaks: sortedHabits.map(h => ({ name: h.title, streak: h.streak_count })),
                 aiTip: tip.tip,
             });
 
