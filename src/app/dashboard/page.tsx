@@ -1,10 +1,11 @@
+
 'use client';
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
+import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
@@ -29,10 +30,12 @@ export default function DashboardPage() {
     const [user, setUser] = useState<User | null>(null);
     const [data, setData] = useState<DashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const router = useRouter();
 
      const processData = useCallback(async (currentUser: User) => {
         setIsLoading(true);
+        setError(null);
         try {
             const { data: profileData, error: profileError } = await supabase
                 .from('profiles')
@@ -61,7 +64,7 @@ export default function DashboardPage() {
                     .limit(1),
                 supabase
                     .from('tasks')
-                    .select('is_completed')
+                    .select('is_completed', { count: 'exact' })
                     .eq('user_id', currentUser.id),
                 supabase
                     .from('user_badges')
@@ -77,8 +80,8 @@ export default function DashboardPage() {
                     .from('habits')
                     .select('title, streak_count')
                     .eq('user_id', currentUser.id)
-                    .order('streak_count', { ascending: false })
-                    .limit(2)
+                    .order('created_at', { ascending: false })
+                    .limit(5)
             ]);
 
             if (moodResult.error) throw moodResult.error;
@@ -108,12 +111,13 @@ export default function DashboardPage() {
                 totalTasks: tasksData?.length || 0,
                 badgesUnlocked: badgesCount || 0,
                 lastJournalEntry: journalData?.[0]?.entry || null,
-                habitStreaks: habitsData?.map(h => ({ name: h.title, streak: h.streak_count })) || [],
+                habitStreaks: habitsData?.sort((a,b) => b.streak_count - a.streak_count).slice(0, 2).map(h => ({ name: h.title, streak: h.streak_count })) || [],
                 aiTip: tip.tip,
             });
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error fetching dashboard data:", error);
+            setError("We couldn't load your dashboard. Please try refreshing the page.");
         } finally {
             setIsLoading(false);
         }
@@ -137,7 +141,7 @@ export default function DashboardPage() {
 
     }, [router, processData]);
 
-    if (isLoading || !data) {
+    if (isLoading || (!data && !error)) {
         return (
             <MainAppLayout>
                 <div className="p-4 sm:p-6 lg:p-8">
@@ -155,6 +159,23 @@ export default function DashboardPage() {
             </MainAppLayout>
         );
     }
+
+    if(error){
+        return (
+             <MainAppLayout>
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                    <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
+                    <h1 className="text-2xl font-bold mb-2">Something Went Wrong</h1>
+                    <p className="text-muted-foreground mb-6">{error}</p>
+                    <Button onClick={() => user && processData(user)}>
+                        Try Again
+                    </Button>
+                </div>
+            </MainAppLayout>
+        )
+    }
+    
+  if (!data) return null; // Should not happen if error handling is correct
   
   return (
     <MainAppLayout>
