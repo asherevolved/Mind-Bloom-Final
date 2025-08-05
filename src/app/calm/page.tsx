@@ -54,10 +54,20 @@ export default function CalmPage() {
   // Effect to play audio when the source changes
   useEffect(() => {
     if (audioRef.current && activeSoundPath) {
-      audioRef.current.src = activeSoundPath;
-      audioRef.current.play().catch(e => console.error("Error playing audio:", e));
+      const audio = audioRef.current;
+      audio.pause(); // pause current if playing
+      audio.src = activeSoundPath;
+      audio.load();  // ensure browser processes the new source
+      audio
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch((e) => {
+          console.error("Error playing audio:", e);
+          setIsPlaying(false);
+        });
     } else if (audioRef.current) {
       audioRef.current.pause();
+      setIsPlaying(false);
     }
   }, [activeSoundPath]);
 
@@ -78,9 +88,13 @@ export default function CalmPage() {
       if (isPlaying) {
           audioRef.current.pause();
       } else {
-          if (audioRef.current.src) {
-            audioRef.current.play().catch(e => console.error("Error playing audio:", e));
-          }
+          audioRef.current
+            .play()
+            .then(() => setIsPlaying(true))
+            .catch((e) => {
+                console.error("Error playing audio:", e);
+                setIsPlaying(false);
+            });
       }
   }
 
