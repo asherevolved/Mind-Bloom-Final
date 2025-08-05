@@ -9,8 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { supabase } from '@/lib/supabase';
 import { ArrowLeft } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
@@ -24,7 +23,12 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
 
     try {
-      await sendPasswordResetEmail(auth, email);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/profile/settings` // Redirect to update password page after click
+      });
+
+      if (error) throw error;
+
       toast({ title: 'Check your email', description: 'A password reset link has been sent to your email address.' });
       setIsSubmitted(true);
     } catch (error: any) {

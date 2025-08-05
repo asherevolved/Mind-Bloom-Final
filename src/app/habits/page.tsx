@@ -2,10 +2,9 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import {HabitsClientPage} from './habits-client-page';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useEffect, useState, useCallback } from 'react';
+import { User } from '@supabase/supabase-js';
 
 export type Habit = {
   id: number;
@@ -17,11 +16,11 @@ export type Habit = {
 };
 
 export default function HabitsPage() {
-    const [userId, setUserId] = useState<string | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [userHabits, setUserHabits] = useState<Habit[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const fetchHabits = async (uid: string) => {
+    const fetchHabits = useCallback(async (uid: string) => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -38,28 +37,32 @@ export default function HabitsPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                setUserId(user.uid);
-                await fetchHabits(user.uid);
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+            const currentUser = session?.user;
+            setUser(currentUser ?? null);
+            if (currentUser) {
+                fetchHabits(currentUser.id);
             } else {
                 setUserHabits([]);
                 setIsLoading(false);
             }
         });
-        return () => unsubscribe();
-    }, []);
+
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
+    }, [fetchHabits]);
   
   return (
     <MainAppLayout>
         <HabitsClientPage 
             initialHabits={userHabits} 
-            userId={userId}
+            userId={user?.id || null}
             isLoading={isLoading}
-            refetchHabits={() => { if(userId) fetchHabits(userId) }}
+            refetchHabits={() => { if(user) fetchHabits(user.id) }}
         />
     </MainAppLayout>
   );

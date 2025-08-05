@@ -84,8 +84,6 @@ export function MoodClientPage({ initialMoods, userId, isLoading, refetchMoods }
       setSelectedTags([]);
       setNote('');
       await awardBadge('mood_starter', 'Mood Starter');
-      // Potentially award streaker badge
-      // This logic can be complex and might be better in a Supabase function
       refetchMoods();
     } catch(error: any) {
       toast({ variant: 'destructive', title: 'Error logging mood', description: error.message });
@@ -115,24 +113,24 @@ export function MoodClientPage({ initialMoods, userId, isLoading, refetchMoods }
           <CardContent className="space-y-6">
             <div className="flex flex-col items-center gap-4">
               <CurrentMoodIcon.icon className={cn("w-20 h-20 transition-colors", CurrentMoodIcon.color)} />
-              <Slider value={mood} onValueChange={setMood} max={10} step={1} disabled={isSubmitting}/>
+              <Slider value={mood} onValueChange={setMood} max={10} step={1} disabled={isSubmitting || !userId}/>
             </div>
             
             <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Tag className="w-4 h-4"/> <span>Add tags (optional)</span></div>
                 <div className="flex flex-wrap gap-2">
                     {moodTags.map(tag => (
-                        <Button key={tag} variant={selectedTags.includes(tag) ? "default" : "outline"} size="sm" onClick={() => toggleTag(tag)} disabled={isSubmitting}>{tag}</Button>
+                        <Button key={tag} variant={selectedTags.includes(tag) ? "default" : "outline"} size="sm" onClick={() => toggleTag(tag)} disabled={isSubmitting || !userId}>{tag}</Button>
                     ))}
                 </div>
             </div>
 
             <div className="space-y-2">
                 <label htmlFor="notes" className="text-sm font-medium text-muted-foreground">Add a note (optional)</label>
-                <Textarea id="notes" placeholder="What's on your mind?" value={note} onChange={(e) => setNote(e.target.value)} disabled={isSubmitting} />
+                <Textarea id="notes" placeholder="What's on your mind?" value={note} onChange={(e) => setNote(e.target.value)} disabled={isSubmitting || !userId} />
             </div>
 
-            <Button className="w-full" onClick={handleLogMood} disabled={isSubmitting}>
+            <Button className="w-full" onClick={handleLogMood} disabled={isSubmitting || !userId}>
                 {isSubmitting ? 'Logging...' : 'Log Mood'}
             </Button>
           </CardContent>
@@ -146,7 +144,7 @@ export function MoodClientPage({ initialMoods, userId, isLoading, refetchMoods }
                 <div className="p-4 space-y-4">
                   {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
                 </div>
-              ) : (
+              ) : initialMoods && initialMoods.length > 0 ? (
               <ul className="divide-y divide-border">
                 {initialMoods.map(log => {
                   const LogIcon = moodIcons[Math.floor((log.mood_score / 10) * (moodIcons.length - 1))];
@@ -167,14 +165,13 @@ export function MoodClientPage({ initialMoods, userId, isLoading, refetchMoods }
                   )
                 })}
               </ul>
+              ) : (
+                <Card>
+                    <CardContent className="p-10 text-center text-muted-foreground">
+                       {!userId ? "Please log in to see your mood history." : "You haven't logged your mood yet."}
+                    </CardContent>
+                </Card>
               )}
-               {!isLoading && initialMoods.length === 0 && (
-                  <Card>
-                      <CardContent className="p-10 text-center text-muted-foreground">
-                          You haven't logged your mood yet.
-                      </CardContent>
-                  </Card>
-                )}
             </CardContent>
           </Card>
         </section>

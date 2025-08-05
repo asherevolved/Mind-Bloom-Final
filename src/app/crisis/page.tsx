@@ -6,42 +6,42 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { HeartPulse, MapPin, Phone, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
 
 
 export default function CrisisPage() {
   const { toast } = useToast();
-  const [userId, setUserId] = useState<string|null>(null);
+  const [user, setUser] = useState<User|null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserId(user.uid);
-      }
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
     });
-    return () => unsubscribe();
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
     const awardBadge = async () => {
-        if (!userId) return;
+        if (!user) return;
 
         const badgeCode = 'help_seeker';
         
         const { data: existingBadge } = await supabase
             .from('user_badges')
             .select('id')
-            .eq('user_id', userId)
+            .eq('user_id', user.id)
             .eq('badge_code', badgeCode)
             .single();
 
         if (!existingBadge) {
             const { error } = await supabase
                 .from('user_badges')
-                .insert({ user_id: userId, badge_code: badgeCode });
+                .insert({ user_id: user.id, badge_code: badgeCode });
             if (!error) {
                 toast({
                     title: 'Badge Unlocked!',
@@ -52,8 +52,10 @@ export default function CrisisPage() {
         }
     };
 
-    awardBadge();
-  }, [userId, toast]);
+    if(user) {
+        awardBadge();
+    }
+  }, [user, toast]);
 
 
   return (

@@ -2,10 +2,9 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { TasksClientPage } from './tasks-client-page';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useEffect, useState, useCallback } from 'react';
+import { User } from '@supabase/supabase-js';
 
 export type Task = {
   id: number;
@@ -29,11 +28,11 @@ const suggestedTasksList: SuggestedTask[] = [
 ];
 
 export default function TasksPage() {
-    const [userId, setUserId] = useState<string | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [userTasks, setUserTasks] = useState<Task[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const fetchTasks = async (uid: string) => {
+    const fetchTasks = useCallback(async (uid: string) => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -50,29 +49,33 @@ export default function TasksPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
     
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                setUserId(user.uid);
-                await fetchTasks(user.uid);
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+            const currentUser = session?.user;
+            setUser(currentUser ?? null);
+            if (currentUser) {
+                fetchTasks(currentUser.id);
             } else {
                 setUserTasks([]);
                 setIsLoading(false);
             }
         });
-        return () => unsubscribe();
-    }, []);
+        
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
+    }, [fetchTasks]);
 
   return (
     <MainAppLayout>
         <TasksClientPage 
             initialTasks={userTasks}
             initialSuggestedTasks={suggestedTasksList}
-            userId={userId}
+            userId={user?.id || null}
             isLoading={isLoading}
-            refetchTasks={() => { if(userId) fetchTasks(userId) }}
+            refetchTasks={() => { if(user) fetchTasks(user.id) }}
         />
     </MainAppLayout>
   );

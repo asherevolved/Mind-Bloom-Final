@@ -9,8 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { supabase } from '@/lib/supabase';
 
 export default function SignupPage() {
@@ -26,41 +24,28 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name,
+          },
+        },
+      });
 
-      if (user) {
-        // Update Firebase Auth profile
-        await updateProfile(user, { displayName: name });
-        
-        // The handle_new_user trigger in Supabase should have already created a profile.
-        // We just need to update it with the name from the form.
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({ name: name, updated_at: new Date().toISOString() })
-          .eq('id', user.uid);
-
-        if (updateError) {
-          // If the trigger failed or didn't run, we can try to insert the profile manually.
-          const { data: profile, error: fetchError } = await supabase
-            .from('profiles').select('id').eq('id', user.uid).single();
-          
-          if (!profile) {
-              const { error: insertError } = await supabase.from('profiles').insert({
-                id: user.uid,
-                name,
-                email,
-                photo_url: user.photoURL,
-              });
-              if (insertError) throw insertError;
-          } else {
-            throw updateError;
-          }
-        }
-        
+      if (error) throw error;
+      
+      // The handle_new_user trigger in Supabase should create the profile.
+      // We just need to navigate the user.
+      if (data.user) {
         toast({ title: 'Account Created!', description: "Welcome! Let's get you set up." });
         router.push('/onboarding');
+      } else {
+        // This case might happen if email confirmation is required.
+        toast({ title: 'Check your email', description: 'Please check your email to confirm your account.' });
       }
+
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Signup Failed', description: error.message });
     } finally {

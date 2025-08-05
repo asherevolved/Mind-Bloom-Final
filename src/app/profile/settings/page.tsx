@@ -11,10 +11,9 @@ import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Bell, Download, Trash2, Moon, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged, signOut, updateProfile } from 'firebase/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
 
 
 type Preferences = {
@@ -40,13 +39,14 @@ export default function SettingsPage() {
 
 
   useEffect(() => {
-      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+          const currentUser = session?.user;
           if (currentUser) {
               setIsGuest(false);
               const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
-                .eq('id', currentUser.uid)
+                .eq('id', currentUser.id)
                 .single();
 
               if (error) {
@@ -67,23 +67,34 @@ export default function SettingsPage() {
               if (guest) {
                 setUser({ id: 'guest', name: 'Guest', email: 'guest@example.com' });
                 setName('Guest');
+              } else {
+                router.push('/');
               }
           }
           setIsLoading(false);
       });
-      return () => unsubscribe();
-  }, []);
+
+      return () => {
+        authListener.subscription.unsubscribe();
+      };
+  }, [router]);
 
   const handleUpdateProfile = async () => {
-    if (!user || isGuest || !auth.currentUser) return;
+    if (!user || isGuest) return;
     try {
-        await updateProfile(auth.currentUser, { displayName: name });
         const { error } = await supabase
             .from('profiles')
             .update({ name, updated_at: new Date().toISOString() })
             .eq('id', user.id);
         
         if (error) throw error;
+
+        // Also update the user metadata in auth
+        const { data: updatedUser, error: updateUserError } = await supabase.auth.updateUser({
+            data: { full_name: name }
+        })
+        if(updateUserError) throw updateUserError;
+
         toast({ title: 'Profile Updated!' });
     } catch(error: any) {
         toast({ variant: 'destructive', title: 'Update failed', description: error.message});
@@ -106,7 +117,7 @@ export default function SettingsPage() {
   };
   
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
     sessionStorage.clear();
     router.push('/');
   }

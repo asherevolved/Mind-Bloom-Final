@@ -51,7 +51,10 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
     };
 
     const handleAddTask = async (title: string, category: string = 'General') => {
-        if (!userId || !title.trim()) return;
+        if (!userId || !title.trim()){
+            toast({variant: 'destructive', title: 'Error', description: 'You must be logged in and provide a title to add a task.'});
+            return
+        };
         setIsSubmitting(true);
 
         try {
@@ -74,7 +77,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
 
     const handleAddSuggestedTask = async (task: SuggestedTask) => {
         if (!userId) {
-            toast({ title: 'Task Added!', description: `(Guest) "${task.title}" has been added to your list.` });
+            toast({ title: 'Task Added!', description: `(Guest) "${task.title}" has been added to your list. Sign up to save.` });
             return;
         }
         await handleAddTask(task.title, task.category);
@@ -147,14 +150,14 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                     value={newTaskText} 
                     onChange={(e) => setNewTaskText(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleAddTask(newTaskText)}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !userId}
                     />
-                  <Button size="icon" onClick={() => handleAddTask(newTaskText)} disabled={isSubmitting || !newTaskText.trim()}><Plus /></Button>
+                  <Button size="icon" onClick={() => handleAddTask(newTaskText)} disabled={isSubmitting || !newTaskText.trim() || !userId}><Plus /></Button>
                 </div>
                 <div className="space-y-3">
                   {isLoading ? (
                     [...Array(3)].map((_,i) => <Skeleton key={i} className="h-12 w-full rounded-md" />)
-                  ) : (
+                  ) : initialTasks && initialTasks.length > 0 ? (
                     initialTasks.map(task => (
                       <div key={task.id} className="flex items-center justify-between rounded-md border p-3 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
                         <div className="flex items-center gap-3">
@@ -169,9 +172,10 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                         </div>
                       </div>
                     ))
-                  )}
-                  {!isLoading && initialTasks.length === 0 && (
-                    <div className="text-center text-muted-foreground p-8">You have no tasks. Add one above!</div>
+                  ) : (
+                    <div className="text-center text-muted-foreground p-8">
+                      {!userId ? "Please log in to manage your tasks." : "You have no tasks. Add one above!"}
+                    </div>
                   )}
                 </div>
               </CardContent>

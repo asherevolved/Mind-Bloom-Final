@@ -11,9 +11,8 @@ import Link from 'next/link';
 import { analyzeSession, AnalyzeSessionOutput, AnalyzeSessionInput } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
 
 
 export default function AnalysisPage() {
@@ -22,43 +21,47 @@ export default function AnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
-  const [userId, setUserId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [hasAwardedBadge, setHasAwardedBadge] = useState(false);
 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (user) {
-        setUserId(user.uid);
-      } else {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
         const guestSession = sessionStorage.getItem('sessionData');
-        if (!guestSession) {
-            router.push('/chat');
+        const isGuestSession = sessionStorage.getItem('isGuest') === 'true';
+        if (!guestSession && !isGuestSession) {
+          router.push('/chat');
         } else {
-            setUserId('guest');
+            setIsGuest(true);
         }
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, [router]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (user === null && !isGuest) return;
 
     const awardBadge = async (code: string, name: string) => {
-        if (!userId || userId === 'guest') return;
+        if (!user) return;
 
         const { data: existingBadge } = await supabase
             .from('user_badges')
             .select('id')
-            .eq('user_id', userId)
+            .eq('user_id', user.id)
             .eq('badge_code', code)
             .single();
         
         if (!existingBadge) {
             const { error } = await supabase
                 .from('user_badges')
-                .insert({ user_id: userId, badge_code: code });
+                .insert({ user_id: user.id, badge_code: code });
 
             if (!error) {
                 setHasAwardedBadge(true);
@@ -87,11 +90,11 @@ export default function AnalysisPage() {
         return;
       }
       
-      if (userId && userId !== 'guest') {
+      if (user) {
           const { data, error } = await supabase
               .from('profiles')
               .select('mood_baseline, support_tags, therapy_tone')
-              .eq('id', userId)
+              .eq('id', user.id)
               .single();
           if (!error && data) {
               onboardingData = {
@@ -106,7 +109,7 @@ export default function AnalysisPage() {
         const result = await analyzeSession({ transcript, onboardingData });
         setAnalysis(result);
 
-        if (userId && userId !== 'guest') {
+        if (user) {
             await awardBadge('self_reflector', 'Self-Reflector');
         }
 
@@ -121,18 +124,18 @@ export default function AnalysisPage() {
     };
 
     processSession();
-  }, [userId, router, toast]);
+  }, [user, isGuest, router, toast]);
 
 
   const handleAddTask = async (title: string) => {
-    if (!userId || userId === 'guest') {
+    if (!user) {
         toast({ title: 'Task Added!', description: `(Guest) "${title}" has been added to your list. Sign up to save tasks.` });
         return;
     }
     try {
         const { error } = await supabase
             .from('tasks')
-            .insert({ user_id: userId, title, category: 'AI Suggested' });
+            .insert({ user_id: user.id, title, category: 'AI Suggested' });
         
         if (error) throw error;
 

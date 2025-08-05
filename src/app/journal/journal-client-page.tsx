@@ -103,13 +103,13 @@ export function JournalClientPage({ initialEntries, userId, isLoading, refetchEn
             <CardDescription>What's on your mind today?</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input placeholder="Entry Title" value={title} onChange={e => setTitle(e.target.value)} disabled={isSubmitting} />
+            <Input placeholder="Entry Title" value={title} onChange={e => setTitle(e.target.value)} disabled={isSubmitting || !userId} />
             <div className="relative">
               <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Mood Tag (e.g., Happy, Reflective)" className="pl-9" value={moodTag} onChange={e => setMoodTag(e.target.value)} disabled={isSubmitting} />
+              <Input placeholder="Mood Tag (e.g., Happy, Reflective)" className="pl-9" value={moodTag} onChange={e => setMoodTag(e.target.value)} disabled={isSubmitting || !userId} />
             </div>
-            <Textarea placeholder="Write your thoughts here..." rows={6} value={entry} onChange={e => setEntry(e.target.value)} disabled={isSubmitting} />
-            <Button className="w-full" onClick={handleSaveEntry} disabled={isSubmitting}>
+            <Textarea placeholder="Write your thoughts here..." rows={6} value={entry} onChange={e => setEntry(e.target.value)} disabled={isSubmitting || !userId} />
+            <Button className="w-full" onClick={handleSaveEntry} disabled={isSubmitting || !userId}>
                 {isSubmitting ? 'Saving...' : 'Save Entry'}
             </Button>
           </CardContent>
@@ -122,7 +122,7 @@ export function JournalClientPage({ initialEntries, userId, isLoading, refetchEn
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
               </div>
-          ) : (
+          ) : initialEntries && initialEntries.length > 0 ? (
             <Accordion type="single" collapsible className="w-full space-y-2">
                 {initialEntries.map(entry => (
                 <AccordionItem key={entry.id} value={`item-${entry.id}`} className="border-b-0">
@@ -146,14 +146,13 @@ export function JournalClientPage({ initialEntries, userId, isLoading, refetchEn
                 </AccordionItem>
                 ))}
             </Accordion>
+          ) : (
+            <Card>
+                <CardContent className="p-10 text-center text-muted-foreground">
+                    {!userId ? "Please log in to keep a journal." : "You haven't written any journal entries yet."}
+                </CardContent>
+            </Card>
           )}
-           {!isLoading && initialEntries.length === 0 && (
-                <Card>
-                    <CardContent className="p-10 text-center text-muted-foreground">
-                        You haven't written any journal entries yet.
-                    </CardContent>
-                </Card>
-            )}
         </section>
       </div>
   );

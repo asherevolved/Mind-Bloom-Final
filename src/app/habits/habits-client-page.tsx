@@ -53,7 +53,10 @@ export function HabitsClientPage({ initialHabits, userId, isLoading, refetchHabi
   }
 
   const handleAddHabit = async () => {
-    if (!userId || !newHabitTitle.trim()) return;
+    if (!userId || !newHabitTitle.trim()) {
+        toast({variant: 'destructive', title: 'Error', description: 'You must be logged in and provide a title to add a habit.'})
+        return;
+    };
     setIsSubmitting(true);
     try {
         const { error } = await supabase.from('habits').insert({
@@ -116,9 +119,9 @@ export function HabitsClientPage({ initialHabits, userId, isLoading, refetchHabi
                 value={newHabitTitle} 
                 onChange={e => setNewHabitTitle(e.target.value)} 
                 onKeyPress={e => e.key === 'Enter' && handleAddHabit()}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !userId}
                 />
-              <Button onClick={handleAddHabit} disabled={isSubmitting}><Plus className="mr-2 h-4 w-4" /> Add Habit</Button>
+              <Button onClick={handleAddHabit} disabled={isSubmitting || !userId}><Plus className="mr-2 h-4 w-4" /> Add Habit</Button>
             </div>
           </CardContent>
         </Card>
@@ -126,7 +129,7 @@ export function HabitsClientPage({ initialHabits, userId, isLoading, refetchHabi
         <div className="space-y-6">
           {isLoading ? (
             [...Array(2)].map((_,i) => <Skeleton key={i} className="h-40 w-full" />)
-          ) : (
+          ) : initialHabits && initialHabits.length > 0 ? (
             initialHabits.map((habit) => {
                 const completedToday = habit.last_completed ? isToday(new Date(habit.last_completed)) : false;
                 return (
@@ -179,14 +182,13 @@ export function HabitsClientPage({ initialHabits, userId, isLoading, refetchHabi
                     </Card>
                 )
             })
+          ) : (
+            <Card>
+                <CardContent className="p-10 text-center text-muted-foreground">
+                    {!userId ? "Please log in to track habits." : "You haven't added any habits yet."}
+                </CardContent>
+            </Card>
           )}
-           {!isLoading && initialHabits.length === 0 && (
-              <Card>
-                  <CardContent className="p-10 text-center text-muted-foreground">
-                      You haven't added any habits yet.
-                  </CardContent>
-              </Card>
-            )}
         </div>
       </div>
   );

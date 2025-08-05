@@ -6,13 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
 import Link from 'next/link';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { getAiTip } from '@/ai/flows/dashboard-tip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { isToday } from 'date-fns';
+import { User } from '@supabase/supabase-js';
 
 type DashboardData = {
     name: string;
@@ -26,63 +26,75 @@ type DashboardData = {
 };
 
 export default function DashboardPage() {
-    const [userId, setUserId] = useState<string | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [data, setData] = useState<DashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const router = useRouter();
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                setUserId(user.uid);
-            } else {
-                setIsLoading(false);
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+            const currentUser = session?.user;
+            setUser(currentUser ?? null);
+            if (!currentUser) {
+                router.push('/');
             }
         });
-        return () => unsubscribe();
-    }, []);
+
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
+    }, [router]);
 
     useEffect(() => {
-        if (userId) {
+        if (user) {
             const processData = async () => {
                 setIsLoading(true);
                 
                 try {
                     const { data: profileData, error: profileError } = await supabase
                         .from('profiles')
-                        .select('name, onboarding_complete, support_tags')
-                        .eq('id', userId)
+                        .select('name, onboarding_complete, support_tags, email')
+                        .eq('id', user.id)
                         .single();
 
                     if (profileError) throw profileError;
 
+                    // Redirect to onboarding if not complete
+                    if (!profileData.onboarding_complete) {
+                        router.push('/onboarding');
+                        return;
+                    }
+
                     const { data: moodData, error: moodError } = await supabase
                         .from('mood_logs')
-                        .select('created_at', { count: 'exact', head: true })
-                        .eq('user_id', userId);
+                        .select('created_at, note')
+                        .eq('user_id', user.id)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
                     
                     if (moodError) throw moodError;
 
-                    const lastMood = moodData ? new Date(moodData[0]?.created_at) : null;
+                    const lastMood = moodData?.[0] ? new Date(moodData[0].created_at) : null;
                     const moodLoggedToday = lastMood ? isToday(lastMood) : false;
 
                     const { data: tasksData, error: tasksError } = await supabase
                         .from('tasks')
-                        .select('is_completed', { count: 'exact' })
-                        .eq('user_id', userId);
+                        .select('is_completed')
+                        .eq('user_id', user.id);
 
                     if (tasksError) throw tasksError;
 
                     const { count: badgesCount, error: badgesError } = await supabase
                         .from('user_badges')
                         .select('*', { count: 'exact', head: true })
-                        .eq('user_id', userId);
+                        .eq('user_id', user.id);
                     
                     if (badgesError) throw badgesError;
 
                     const { data: journalData, error: journalError } = await supabase
                         .from('journal_entries')
                         .select('entry')
-                        .eq('user_id', userId)
+                        .eq('user_id', user.id)
                         .order('created_at', { ascending: false })
                         .limit(1);
 
@@ -91,7 +103,7 @@ export default function DashboardPage() {
                     const { data: habitsData, error: habitsError } = await supabase
                         .from('habits')
                         .select('title, streak_count')
-                        .eq('user_id', userId)
+                        .eq('user_id', user.id)
                         .order('streak_count', { ascending: false })
                         .limit(2);
 
@@ -103,7 +115,7 @@ export default function DashboardPage() {
                     });
 
                     setData({
-                        name: profileData.name || auth.currentUser?.displayName || 'Explorer',
+                        name: profileData.name || profileData.email || 'Explorer',
                         moodLogged: moodLoggedToday,
                         tasksLeft: tasksData?.filter(t => !t.is_completed).length || 0,
                         totalTasks: tasksData?.length || 0,
@@ -121,9 +133,9 @@ export default function DashboardPage() {
             };
             processData();
         }
-    }, [userId]);
+    }, [user, router]);
 
-    if (isLoading) {
+    if (isLoading || !data) {
         return (
             <MainAppLayout>
                 <div className="p-4 sm:p-6 lg:p-8">
@@ -140,18 +152,6 @@ export default function DashboardPage() {
                 </div>
             </MainAppLayout>
         );
-    }
-
-    if (!userId || !data) {
-        return (
-           <MainAppLayout>
-             <div className="p-8 text-center">
-               <h1 className="text-2xl font-bold">Welcome to Mind Bloom</h1>
-               <p className="text-muted-foreground mb-4">Please log in to see your dashboard.</p>
-               <Link href="/"><Button>Login</Button></Link>
-             </div>
-           </MainAppLayout>
-         );
     }
   
   return (

@@ -20,10 +20,9 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { supabase } from '@/lib/supabase';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -36,7 +35,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
   const [therapyTone, setTherapyTone] = useState<string | undefined>(undefined);
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -44,26 +44,31 @@ export default function ChatPage() {
 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUserId(user.uid);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const currentUser = session?.user;
+      setUser(currentUser ?? null);
+      if (currentUser) {
+        setIsGuest(false);
         const { data } = await supabase
             .from('profiles')
             .select('therapy_tone')
-            .eq('id', user.uid)
+            .eq('id', currentUser.id)
             .single();
         setTherapyTone(data?.therapy_tone || 'Reflective Listener');
       } else {
-        const isGuest = sessionStorage.getItem('isGuest') === 'true';
-        if (!isGuest) {
-          router.push('/');
+        const guestSession = sessionStorage.getItem('isGuest') === 'true';
+        if (guestSession) {
+          setIsGuest(true);
+          setTherapyTone('Reflective Listener');
         } else {
-          setUserId('guest');
+          router.push('/');
         }
-        setTherapyTone('Reflective Listener'); // Default for guests
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, [router]);
 
 
@@ -72,19 +77,19 @@ export default function ChatPage() {
   }, [messages]);
   
   const awardBadge = async (code: string, name: string) => {
-    if (!userId || userId === 'guest') return;
+    if (!user) return;
 
     const { data: existingBadge } = await supabase
         .from('user_badges')
         .select('id')
-        .eq('user_id', userId)
+        .eq('user_id', user.id)
         .eq('badge_code', code)
         .single();
     
     if (!existingBadge) {
         const { error } = await supabase
             .from('user_badges')
-            .insert({ user_id: userId, badge_code: code });
+            .insert({ user_id: user.id, badge_code: code });
 
         if (!error) {
             toast({

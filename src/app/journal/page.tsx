@@ -2,10 +2,9 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { JournalClientPage } from './journal-client-page';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useEffect, useState, useCallback } from 'react';
+import { User } from '@supabase/supabase-js';
 
 export type JournalEntry = {
   id: number;
@@ -17,11 +16,11 @@ export type JournalEntry = {
 };
 
 export default function JournalPage() {
-    const [userId, setUserId] = useState<string | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [userEntries, setUserEntries] = useState<JournalEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const fetchEntries = async (uid: string) => {
+    const fetchEntries = useCallback(async (uid: string) => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -38,28 +37,32 @@ export default function JournalPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, async (user) => {
-            if (user) {
-                setUserId(user.uid);
-                await fetchEntries(user.uid);
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+            const currentUser = session?.user;
+            setUser(currentUser ?? null);
+            if (currentUser) {
+                fetchEntries(currentUser.id);
             } else {
                 setUserEntries([]);
                 setIsLoading(false);
             }
         });
-        return () => unsubscribe();
-    }, []);
+        
+        return () => {
+            authListener.subscription.unsubscribe();
+        };
+    }, [fetchEntries]);
   
   return (
     <MainAppLayout>
         <JournalClientPage 
             initialEntries={userEntries} 
-            userId={userId} 
+            userId={user?.id || null} 
             isLoading={isLoading}
-            refetchEntries={() => { if(userId) fetchEntries(userId) }}
+            refetchEntries={() => { if(user) fetchEntries(user.id) }}
         />
     </MainAppLayout>
   );

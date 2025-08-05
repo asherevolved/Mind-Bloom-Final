@@ -2,10 +2,9 @@
 
 import { MainAppLayout } from '@/components/main-app-layout';
 import { MoodClientPage } from './mood-client-page';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useEffect, useState, useCallback } from 'react';
+import { User } from '@supabase/supabase-js';
 
 export type MoodLog = {
   id: number;
@@ -18,11 +17,11 @@ export type MoodLog = {
 
 
 export default function MoodPage() {
-  const [userId, setUserId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [userMoods, setUserMoods] = useState<MoodLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchMoods = async (uid: string) => {
+  const fetchMoods = useCallback(async (uid: string) => {
     setIsLoading(true);
     try {
         const { data, error } = await supabase
@@ -39,28 +38,32 @@ export default function MoodPage() {
     } finally {
         setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            setUserId(user.uid);
-            await fetchMoods(user.uid);
-        } else {
-            setUserMoods([]);
-            setIsLoading(false);
-        }
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      const currentUser = session?.user;
+      setUser(currentUser ?? null);
+      if (currentUser) {
+        fetchMoods(currentUser.id);
+      } else {
+        setUserMoods([]);
+        setIsLoading(false);
+      }
     });
-    return () => unsubscribe();
-  }, []);
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [fetchMoods]);
   
   return (
     <MainAppLayout>
         <MoodClientPage 
             initialMoods={userMoods} 
-            userId={userId} 
+            userId={user?.id || null} 
             isLoading={isLoading}
-            refetchMoods={() => { if(userId) fetchMoods(userId) }}
+            refetchMoods={() => { if(user) fetchMoods(user.id) }}
         />
     </MainAppLayout>
   );

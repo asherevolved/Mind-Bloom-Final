@@ -7,9 +7,9 @@ import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
+import { useRouter } from 'next/navigation';
 
 const allBadges = [
   { code: 'welcome_explorer', name: 'Welcome Explorer', icon: Star, criteria: 'Complete the onboarding flow' },
@@ -29,39 +29,46 @@ type BadgeInfo = typeof allBadges[0] & { unlocked: boolean };
 export default function BadgesPage() {
   const [badges, setBadges] = useState<BadgeInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-        if(user) {
-            setUserId(user.uid);
-            try {
-                const { data: userBadges, error } = await supabase
-                    .from('user_badges')
-                    .select('badge_code')
-                    .eq('user_id', user.uid);
-                
-                if (error) throw error;
-                
-                const unlockedCodes = userBadges.map(b => b.badge_code);
-                const badgeStatus = allBadges.map(b => ({
-                  ...b,
-                  unlocked: unlockedCodes.includes(b.code),
-                }));
-                setBadges(badgeStatus);
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        const currentUser = session?.user;
+        setUser(currentUser ?? null);
+        if (!currentUser) {
+            const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
+            setBadges(badgeStatus);
+            setIsLoading(false);
+            return;
+        }
 
-            } catch (error) {
-                console.error("Error fetching badges:", error);
-                const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
-                setBadges(badgeStatus);
-            }
-        } else {
+        try {
+            const { data: userBadges, error } = await supabase
+                .from('user_badges')
+                .select('badge_code')
+                .eq('user_id', currentUser.id);
+            
+            if (error) throw error;
+            
+            const unlockedCodes = userBadges.map(b => b.badge_code);
+            const badgeStatus = allBadges.map(b => ({
+              ...b,
+              unlocked: unlockedCodes.includes(b.code),
+            }));
+            setBadges(badgeStatus);
+
+        } catch (error) {
+            console.error("Error fetching badges:", error);
             const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
             setBadges(badgeStatus);
         }
         setIsLoading(false);
     });
-    return () => unsubscribe();
+
+    return () => {
+        authListener.subscription.unsubscribe();
+    };
   }, []);
   
   const unlockedBadges = badges.filter(b => b.unlocked);

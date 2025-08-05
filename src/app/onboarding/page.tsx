@@ -12,9 +12,8 @@ import { Angry, Annoyed, Frown, Laugh, Meh, Smile as SmileIcon, Hand, Heart, Bra
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
 import { supabase } from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
 
 const totalSteps = 4;
 
@@ -56,15 +55,17 @@ export default function OnboardingPage() {
     const guest = sessionStorage.getItem('isGuest') === 'true';
     setIsGuest(guest);
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-      } else if (!guest) {
-        router.push('/');
-      }
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+        const currentUser = session?.user;
+        setUser(currentUser ?? null);
+        if (!currentUser && !guest) {
+            router.push('/');
+        }
     });
 
-    return () => unsubscribe();
+    return () => {
+        authListener.subscription.unsubscribe();
+    };
   }, [router]);
 
 
@@ -119,11 +120,11 @@ export default function OnboardingPage() {
         const { error } = await supabase
             .from('profiles')
             .update(onboardingData)
-            .eq('id', user.uid);
+            .eq('id', user.id);
         
         if (error) throw error;
         
-        await awardBadge(user.uid, 'welcome_explorer', 'Welcome Explorer');
+        await awardBadge(user.id, 'welcome_explorer', 'Welcome Explorer');
 
         router.push('/dashboard');
     } catch (error: any) {
