@@ -33,7 +33,6 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
 
     // New Task Dialog State
     const [newTaskTitle, setNewTaskTitle] = useState('');
-    const [newTaskPriority, setNewTaskPriority] = useState('Medium');
     const [newSubTasks, setNewSubTasks] = useState<{ title: string }[]>([]);
     const [newSubTaskInput, setNewSubTaskInput] = useState('');
     const [newReminderInterval, setNewReminderInterval] = useState<number | null>(null);
@@ -66,7 +65,6 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
 
     const resetDialog = () => {
         setNewTaskTitle('');
-        setNewTaskPriority('Medium');
         setNewSubTasks([]);
         setNewSubTaskInput('');
         setNewReminderInterval(null);
@@ -97,7 +95,6 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                     user_id: userId, 
                     title: newTaskTitle, 
                     category: 'General', 
-                    priority: newTaskPriority,
                     reminder_interval: newReminderInterval,
                 })
                 .select('id')
@@ -177,15 +174,6 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
     
     const completedCount = initialTasks.filter(t => t.is_completed).length;
 
-    const getPriorityBadgeVariant = (priority: string) => {
-        switch(priority) {
-            case 'High': return 'destructive';
-            case 'Medium': return 'secondary';
-            case 'Low': return 'outline';
-            default: return 'outline';
-        }
-    }
-
   return (
       <div className="p-4 sm:p-6 lg:p-8">
         <header className="mb-8">
@@ -223,19 +211,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                     <Label htmlFor="title">Task Name</Label>
                                     <Input id="title" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="priority">Priority</Label>
-                                    <Select value={newTaskPriority} onValueChange={setNewTaskPriority}>
-                                        <SelectTrigger id="priority">
-                                            <SelectValue placeholder="Select priority" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="Low">Low</SelectItem>
-                                            <SelectItem value="Medium">Medium</SelectItem>
-                                            <SelectItem value="High">High</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                                
                                 <div className="space-y-2">
                                     <Label htmlFor="subtasks">Sub-tasks</Label>
                                     <div className="space-y-2">
@@ -284,7 +260,7 @@ export function TasksClientPage({ initialTasks, initialSuggestedTasks, userId, i
                                     <div className="flex-1 space-y-2">
                                         <p className="font-medium">{task.title}</p>
                                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                            <Badge variant={getPriorityBadgeVariant(task.priority)}>{task.priority}</Badge>
+                                            
                                             {totalSubTasks > 0 && (
                                                 <span>{completedSubTasks} of {totalSubTasks} steps</span>
                                             )}

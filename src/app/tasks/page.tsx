@@ -18,7 +18,6 @@ export type Task = {
   category: string;
   is_completed: boolean;
   user_id: string;
-  priority: 'High' | 'Medium' | 'Low';
   reminder_interval: number | null;
   sub_tasks: SubTask[];
 };
