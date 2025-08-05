@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Task, SuggestedTask } from './page';
 import { useMutation } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { api } from '../../convex/_generated/api';
 
 interface TasksClientPageProps {
     initialTasks: Task[];

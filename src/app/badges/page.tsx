@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useQuery } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { api } from '../../convex/_generated/api';
 
 const allBadges = [
   { code: 'welcome_explorer', name: 'Welcome Explorer', icon: Star, criteria: 'Complete the onboarding flow' },

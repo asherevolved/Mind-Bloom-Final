@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { api } from '../../convex/_generated/api';
 
 
 export default function AnalysisPage() {

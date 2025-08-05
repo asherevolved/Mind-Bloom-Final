@@ -3,7 +3,7 @@
 import { MainAppLayout } from '@/components/main-app-layout';
 import { JournalClientPage } from './journal-client-page';
 import { useQuery } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { api } from '../../convex/_generated/api';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';

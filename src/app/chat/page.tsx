@@ -24,7 +24,7 @@ import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../../convex/_generated/api';
+import { api } from '../../convex/_generated/api';
 
 type Message = {
   role: 'user' | 'assistant';

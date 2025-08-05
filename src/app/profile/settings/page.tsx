@@ -15,7 +15,7 @@ import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile } from 'firebase/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../../../convex/_generated/api';
+import { api } from '../../convex/_generated/api';
 
 
 type Preferences = {
