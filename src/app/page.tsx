@@ -11,7 +11,7 @@ import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { useMutation, useQuery } from 'convex/react';
+import { useMutation } from 'convex/react';
 import { api } from 'convex/_generated/api';
 
 export default function LoginPage() {
