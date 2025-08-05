@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { getAiTip } from '@/ai/flows/dashboard-tip';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
@@ -31,21 +31,7 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
 
-    useEffect(() => {
-        const fetchUserAndData = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                setUser(session.user);
-                processData(session.user);
-            } else {
-                router.push('/');
-            }
-        };
-
-        fetchUserAndData();
-    }, [router]);
-
-    const processData = async (currentUser: User) => {
+     const processData = useCallback(async (currentUser: User) => {
         setIsLoading(true);
         try {
             const { data: profileData, error: profileError } = await supabase
@@ -55,56 +41,60 @@ export default function DashboardPage() {
                 .single();
 
             if (profileError) throw profileError;
-
-            // Redirect to onboarding if not complete
             if (!profileData.onboarding_complete) {
                 router.push('/onboarding');
                 return;
             }
 
-            const { data: moodData, error: moodError } = await supabase
-                .from('mood_logs')
-                .select('created_at, note')
-                .eq('user_id', currentUser.id)
-                .order('created_at', { ascending: false })
-                .limit(1);
-            
-            if (moodError) throw moodError;
+            const [
+                moodResult,
+                tasksResult,
+                badgesResult,
+                journalResult,
+                habitsResult
+            ] = await Promise.all([
+                supabase
+                    .from('mood_logs')
+                    .select('created_at, note')
+                    .eq('user_id', currentUser.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1),
+                supabase
+                    .from('tasks')
+                    .select('is_completed')
+                    .eq('user_id', currentUser.id),
+                supabase
+                    .from('user_badges')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('user_id', currentUser.id),
+                supabase
+                    .from('journal_entries')
+                    .select('entry')
+                    .eq('user_id', currentUser.id)
+                    .order('created_at', { ascending: false })
+                    .limit(1),
+                supabase
+                    .from('habits')
+                    .select('title, streak_count')
+                    .eq('user_id', currentUser.id)
+                    .order('streak_count', { ascending: false })
+                    .limit(2)
+            ]);
 
+            if (moodResult.error) throw moodResult.error;
+            if (tasksResult.error) throw tasksResult.error;
+            if (badgesResult.error) throw badgesResult.error;
+            if (journalResult.error) throw journalResult.error;
+            if (habitsResult.error) throw habitsResult.error;
+
+            const moodData = moodResult.data;
+            const tasksData = tasksResult.data;
+            const badgesCount = badgesResult.count;
+            const journalData = journalResult.data;
+            const habitsData = habitsResult.data;
+            
             const lastMood = moodData?.[0] ? new Date(moodData[0].created_at) : null;
             const moodLoggedToday = lastMood ? isToday(lastMood) : false;
-
-            const { data: tasksData, error: tasksError } = await supabase
-                .from('tasks')
-                .select('is_completed')
-                .eq('user_id', currentUser.id);
-
-            if (tasksError) throw tasksError;
-
-            const { count: badgesCount, error: badgesError } = await supabase
-                .from('user_badges')
-                .select('*', { count: 'exact', head: true })
-                .eq('user_id', currentUser.id);
-            
-            if (badgesError) throw badgesError;
-
-            const { data: journalData, error: journalError } = await supabase
-                .from('journal_entries')
-                .select('entry')
-                .eq('user_id', currentUser.id)
-                .order('created_at', { ascending: false })
-                .limit(1);
-
-            if (journalError) throw journalError;
-
-            const { data: habitsData, error: habitsError } = await supabase
-                .from('habits')
-                .select('title, streak_count')
-                .eq('user_id', currentUser.id)
-                .order('streak_count', { ascending: false })
-                .limit(2);
-
-            if (habitsError) throw habitsError;
             
             const tip = await getAiTip({
                 onboardingGoals: profileData.support_tags || [],
@@ -127,8 +117,25 @@ export default function DashboardPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [router]);
 
+
+    useEffect(() => {
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+            const currentUser = session?.user;
+            setUser(currentUser ?? null);
+            if (currentUser) {
+                processData(currentUser);
+            } else {
+                router.push('/');
+            }
+        });
+        
+        return () => {
+          authListener.subscription.unsubscribe();
+        };
+
+    }, [router, processData]);
 
     if (isLoading || !data) {
         return (
