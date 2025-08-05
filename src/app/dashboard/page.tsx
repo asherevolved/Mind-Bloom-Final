@@ -80,7 +80,6 @@ export default function DashboardPage() {
                     .from('habits')
                     .select('title, streak_count')
                     .eq('user_id', currentUser.id)
-                    .order('created_at', { ascending: false })
                     .limit(5)
             ]);
 
