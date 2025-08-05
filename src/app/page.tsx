@@ -11,9 +11,8 @@ import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { useMutation } from 'convex/react';
-import { api } from '../../convex/_generated/api';
-import { useConvexAuth } from 'convex/react';
+import { useMutation, useConvexAuth } from 'convex/react';
+import { api } from 'convex/_generated/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -23,7 +22,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+  const { isLoading: isAuthLoading } = useConvexAuth();
   const listUsers = useMutation(api.crud.list);
   const insertUser = useMutation(api.crud.insert);
 
