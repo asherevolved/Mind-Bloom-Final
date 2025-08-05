@@ -6,12 +6,11 @@ import { Award, BookOpen, Check, HandHeart, MessageCircle, Star, Target, ThumbsU
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useEffect } from 'react';
-import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { api } from 'convex/_generated/api';
 
 const allBadges = [
   { code: 'welcome_explorer', name: 'Welcome Explorer', icon: Star, criteria: 'Complete the onboarding flow' },
@@ -32,9 +31,8 @@ export default function BadgesPage() {
   const [badges, setBadges] = useState<BadgeInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
-  const { toast } = useToast();
 
-  const badgesList = useQuery(api.crud.list, { table: 'badges'});
+  const badgesList = useQuery(api.crud.list, userId ? { table: 'badges'} : 'skip');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -48,10 +46,10 @@ export default function BadgesPage() {
         }
     });
     return () => unsubscribe();
-  }, [toast]);
+  }, []);
   
   useEffect(() => {
-    if(badgesList !== undefined && userId) {
+    if(badgesList) {
       const unlockedCodes = badgesList.filter((b: any) => b.userId === userId).map((b: any) => b.badge_code);
       const badgeStatus = allBadges.map(b => ({
           ...b,
@@ -59,7 +57,9 @@ export default function BadgesPage() {
       }));
       setBadges(badgeStatus);
       setIsLoading(false);
-    } else if (!userId) {
+    } else if (!userId) { // Handle guest case where badgesList is skipped
+        const badgeStatus = allBadges.map(b => ({ ...b, unlocked: false }));
+        setBadges(badgeStatus);
         setIsLoading(false);
     }
   }, [badgesList, userId]);
@@ -77,7 +77,7 @@ export default function BadgesPage() {
         
         {isLoading ? (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {[...Array(5)].map((_,i) => <Skeleton key={i} className="h-48 w-full" />)}
+                {[...Array(10)].map((_,i) => <Skeleton key={i} className="h-48 w-full" />)}
             </div>
         ) : (
             <Tabs defaultValue="all" className="w-full">

@@ -24,7 +24,7 @@ import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { api } from 'convex/_generated/api';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -44,27 +44,35 @@ export default function ChatPage() {
   const router = useRouter();
 
   const insertSession = useMutation(api.crud.insert);
-  const listUsers = useMutation(api.crud.list);
+  const userList = useQuery(api.crud.list, userId ? { table: 'users' } : 'skip');
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setUserId(user.uid);
-        const allUsers = await listUsers({table: 'users'});
-        const userDoc: any = allUsers?.find((u:any) => u.uid === user.uid);
-        if (userDoc) {
-          setTherapyTone(userDoc.therapyTone || 'Reflective Listener');
-        }
       } else {
         const isGuest = sessionStorage.getItem('isGuest') === 'true';
         if (!isGuest) {
           router.push('/');
+        } else {
+          setUserId('guest');
         }
         setTherapyTone('Reflective Listener'); // Default for guests
       }
     });
     return () => unsubscribe();
-  }, [router, listUsers]);
+  }, [router]);
+
+  useEffect(() => {
+    if (userId && userId !== 'guest' && userList) {
+        const userDoc: any = userList?.find((u:any) => u.uid === userId);
+        if (userDoc) {
+          setTherapyTone(userDoc.therapyTone || 'Reflective Listener');
+        }
+    }
+  }, [userId, userList]);
+
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -126,7 +134,7 @@ export default function ChatPage() {
       return;
     }
     
-    if (userId) {
+    if (userId && userId !== 'guest') {
         try {
             const sessionData = {
                 userId: userId,

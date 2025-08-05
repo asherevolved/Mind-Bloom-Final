@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { MoodLog } from './page';
 import { useMutation } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { api } from 'convex/_generated/api';
 
 const moodIcons = [
   { icon: Angry, color: 'text-red-400' },

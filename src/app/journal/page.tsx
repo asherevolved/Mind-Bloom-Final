@@ -3,7 +3,7 @@
 import { MainAppLayout } from '@/components/main-app-layout';
 import { JournalClientPage } from './journal-client-page';
 import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { api } from 'convex/_generated/api';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
@@ -19,13 +19,15 @@ export type JournalEntry = {
 
 export default function JournalPage() {
     const [userId, setUserId] = useState<string | null>(null);
-    const allEntries = useQuery(api.crud.list, { table: 'journal' }) || [];
+    const allEntries = useQuery(api.crud.list, userId ? { table: 'journal' } : 'skip');
     const [userEntries, setUserEntries] = useState([]);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
+            } else {
+                setUserEntries([]);
             }
         });
         return () => unsubscribe();
@@ -33,7 +35,10 @@ export default function JournalPage() {
 
     useEffect(() => {
         if(userId && allEntries) {
-            setUserEntries(allEntries.filter((e: any) => e.userId === userId));
+            const sortedEntries = allEntries
+                .filter((e: any) => e.userId === userId)
+                .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setUserEntries(sortedEntries);
         }
     }, [userId, allEntries]);
   

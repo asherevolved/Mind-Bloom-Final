@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { useMutation } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { api } from 'convex/_generated/api';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
@@ -39,7 +39,7 @@ export default function SignupPage() {
               uid: user.uid,
               name,
               email,
-              createdAt: new Date(),
+              createdAt: new Date().toISOString(),
               onboardingComplete: false,
             }});
         } catch (dbError: any) {

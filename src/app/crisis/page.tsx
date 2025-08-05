@@ -5,31 +5,35 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { HeartPulse, MapPin, Phone, Trophy } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
-import { useMutation } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from 'convex/_generated/api';
 
 
 export default function CrisisPage() {
   const { toast } = useToast();
   const insertBadge = useMutation(api.crud.insert);
-  const listBadges = useMutation(api.crud.list);
-
+  const [userId, setUserId] = useState<string|null>(null);
+  const userBadges = useQuery(api.crud.list, userId ? { table: 'badges' } : 'skip');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        awardBadge(user.uid);
+        setUserId(user.uid);
       }
     });
+    return () => unsubscribe();
+  }, []);
 
-    const awardBadge = async (userId: string) => {
+  useEffect(() => {
+    const awardBadge = async () => {
+        if (!userId || !userBadges) return;
+
         const badgeCode = 'help_seeker';
-        const allBadges: any[] = await listBadges({table: 'badges'}) || [];
-        const badgeDoc = allBadges.find(b => b.userId === userId && b.badge_code === badgeCode);
+        const badgeDoc = userBadges.find((b: any) => b.userId === userId && b.badge_code === badgeCode);
 
         if (!badgeDoc) {
             await insertBadge({ table: 'badges', data: {
@@ -46,8 +50,8 @@ export default function CrisisPage() {
         }
     };
 
-    return () => unsubscribe();
-  }, [toast, insertBadge, listBadges]);
+    awardBadge();
+  }, [userId, userBadges, insertBadge, toast]);
 
 
   return (

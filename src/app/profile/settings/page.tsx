@@ -15,7 +15,7 @@ import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile } from 'firebase/auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { api } from 'convex/_generated/api';
 
 
 type Preferences = {
@@ -40,14 +40,14 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const router = useRouter();
 
-  const allUsers = useQuery(api.crud.list, { table: 'users' });
+  const allUsers = useQuery(api.crud.list, user ? { table: 'users' } : 'skip');
   const updateUser = useMutation(api.crud.update);
 
   useEffect(() => {
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-          if (currentUser && allUsers) {
+          if (currentUser) {
               setIsGuest(false);
-              const userDoc: any = allUsers.find((u: any) => u.uid === currentUser.uid);
+              const userDoc: any = allUsers?.find((u: any) => u.uid === currentUser.uid);
 
               if (userDoc) {
                   setUser({
@@ -62,6 +62,14 @@ export default function SettingsPage() {
                       darkMode: userDoc.darkMode ?? true,
                       notificationFrequency: userDoc.notificationFrequency ?? 'daily',
                   });
+              } else if (allUsers !== undefined) { // ensure query has run
+                  setUser({ // fallback user object
+                      uid: currentUser.uid,
+                      email: currentUser.email || '',
+                      name: currentUser.displayName || '',
+                      photoURL: currentUser.photoURL || '',
+                  });
+                  setName(currentUser.displayName || '');
               }
           } else {
               const guest = sessionStorage.getItem('isGuest') === 'true';
@@ -129,7 +137,7 @@ export default function SettingsPage() {
                 <h1 className="font-headline text-3xl font-bold text-foreground">Profile & Settings</h1>
                 <p className="text-muted-foreground">Manage your account and preferences.</p>
             </div>
-            {!isGuest && <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2"/>Logout</Button>}
+            <Button variant="outline" onClick={handleLogout}><LogOut className="mr-2"/>{isGuest ? 'Exit Guest Mode' : 'Logout'}</Button>
         </header>
 
         <div className="space-y-8">
@@ -149,11 +157,11 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>Personal Information</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarImage src={user?.photoURL || "https://placehold.co/100x100.png"} data-ai-hint="profile avatar" />
-                  <AvatarFallback>{user?.name?.[0] || 'G'}</AvatarFallback>
+                  <AvatarImage src={user?.photoURL || undefined} data-ai-hint="profile avatar" />
+                  <AvatarFallback>{user?.name?.[0]?.toUpperCase() || 'G'}</AvatarFallback>
                 </Avatar>
                 <Button variant="outline" disabled>Change Photo</Button>
               </div>
@@ -165,7 +173,7 @@ export default function SettingsPage() {
                 <Label htmlFor="email">Email</Label>
                 <Input id="email" type="email" value={user?.email || 'guest@example.com'} disabled />
               </div>
-              <Button onClick={handleUpdateProfile} disabled={isGuest}>Save Changes</Button>
+              <Button onClick={handleUpdateProfile} disabled={isGuest || !user?._id}>Save Changes</Button>
             </CardContent>
           </Card>
 
@@ -173,7 +181,7 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle>Preferences</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div className="space-y-0.5">
                   <Label className="flex items-center gap-2"><Moon/> Dark Mode</Label>
@@ -203,7 +211,7 @@ export default function SettingsPage() {
               <CardTitle className="text-destructive">Danger Zone</CardTitle>
                <CardDescription>These actions are permanent and cannot be undone.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 pt-6">
                <Button variant="outline" className="w-full justify-start text-left" disabled={isGuest}>
                   <Download className="mr-2 h-4 w-4" /> Download My Data
                 </Button>

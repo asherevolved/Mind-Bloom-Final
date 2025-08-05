@@ -7,11 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Bot, Book, ListTodo, Smile, Sparkles, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { api } from 'convex/_generated/api';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useState } from 'react';
 import { getAiTip } from '@/ai/flows/dashboard-tip';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type DashboardData = {
     name: string;
@@ -29,26 +30,28 @@ export default function DashboardPage() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    const users = useQuery(api.crud.list, { table: 'users' });
-    const moodLogs = useQuery(api.crud.list, { table: 'mood_logs' });
-    const tasks = useQuery(api.crud.list, { table: 'tasks' });
-    const badges = useQuery(api.crud.list, { table: 'badges' });
-    const journalEntries = useQuery(api.crud.list, { table: 'journal' });
-    const habits = useQuery(api.crud.list, { table: 'habits' });
+    const users = useQuery(api.crud.list, userId ? { table: 'users' } : 'skip');
+    const moodLogs = useQuery(api.crud.list, userId ? { table: 'mood_logs' } : 'skip');
+    const tasks = useQuery(api.crud.list, userId ? { table: 'tasks' } : 'skip');
+    const badges = useQuery(api.crud.list, userId ? { table: 'badges' } : 'skip');
+    const journalEntries = useQuery(api.crud.list, userId ? { table: 'journal' } : 'skip');
+    const habits = useQuery(api.crud.list, userId ? { table: 'habits' } : 'skip');
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
             } else {
-                setIsLoading(false);
+                setIsLoading(false); // No user, stop loading
             }
         });
         return () => unsubscribe();
     }, []);
 
     useEffect(() => {
-        if (userId && users && moodLogs && tasks && badges && journalEntries && habits) {
+        const areQueriesReady = users && moodLogs && tasks && badges && journalEntries && habits;
+
+        if (userId && areQueriesReady) {
             const processData = async () => {
                 const currentUser: any = users.find((u: any) => u.uid === userId);
                 if (!currentUser) {
@@ -58,6 +61,7 @@ export default function DashboardPage() {
 
                 // Mood
                 const userMoodLogs: any[] = moodLogs.filter((log: any) => log.userId === userId);
+                userMoodLogs.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
                 const moodLogged = userMoodLogs.some((log: any) => new Date(log.createdAt) >= today);
@@ -83,7 +87,7 @@ export default function DashboardPage() {
                 const habitStreaks = userHabits.slice(0, 2).map(habit => ({ name: habit.title, streak: habit.streak_count }));
                 
                 // AI Tip
-                const recentMoodNote = userMoodLogs.length > 0 ? userMoodLogs[0].note : 'neutral';
+                const recentMoodNote = userMoodLogs.length > 0 ? userMoodLogs[0].note : 'feeling neutral';
                 const tip = await getAiTip({
                     onboardingGoals: currentUser?.supportTags || [],
                     recentMood: recentMoodNote,
@@ -102,13 +106,26 @@ export default function DashboardPage() {
                 setIsLoading(false);
             };
             processData();
+        } else if (!userId) {
+            setIsLoading(false);
         }
     }, [userId, users, moodLogs, tasks, badges, journalEntries, habits]);
 
     if (isLoading) {
         return (
             <MainAppLayout>
-                <div className="p-8 text-center">Loading dashboard...</div>
+                <div className="p-4 sm:p-6 lg:p-8">
+                     <Skeleton className="h-10 w-1/2 mb-8" />
+                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <Skeleton className="h-48 col-span-1 sm:col-span-2" />
+                        <Skeleton className="h-48" />
+                        <Skeleton className="h-48" />
+                        <Skeleton className="h-48" />
+                        <Skeleton className="h-48" />
+                        <Skeleton className="h-48" />
+                        <Skeleton className="h-48" />
+                     </div>
+                </div>
             </MainAppLayout>
         );
     }

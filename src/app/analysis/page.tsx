@@ -13,8 +13,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useMutation, useQuery } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useMutation } from 'convex/react';
+import { api } from 'convex/_generated/api';
 
 
 export default function AnalysisPage() {
@@ -41,6 +41,8 @@ export default function AnalysisPage() {
         const guestSession = sessionStorage.getItem('sessionData');
         if (!guestSession) {
             router.push('/chat');
+        } else {
+            setUserId('guest'); // Special id for guest
         }
       }
     });
@@ -48,15 +50,15 @@ export default function AnalysisPage() {
   }, [router]);
 
   useEffect(() => {
-    if (userId === null && !sessionStorage.getItem('sessionData')) return;
+    if (!userId) return;
 
     const processSession = async () => {
       const sessionId = sessionStorage.getItem('sessionId');
       let transcript = '';
       let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
 
-      if (userId) {
-        const userDoc = await getUser({table: 'users', id: userId});
+      if (userId && userId !== 'guest') {
+        const userDoc: any = await getUser({table: 'users', id: userId});
         if (userDoc) {
             onboardingData = {
                 moodBaseline: userDoc.moodBaseline,
@@ -66,7 +68,7 @@ export default function AnalysisPage() {
         }
       }
 
-      if (sessionId && userId) {
+      if (sessionId && userId && userId !== 'guest') {
         const sessionDoc: any = await getSession({table: 'therapy_sessions', id: sessionId });
         if (!sessionDoc || sessionDoc.userId !== userId) {
           setError('Could not retrieve session data. Please try again.');
@@ -93,7 +95,7 @@ export default function AnalysisPage() {
         const result = await analyzeSession({ transcript, onboardingData });
         setAnalysis(result);
 
-        if (userId && sessionId) {
+        if (userId && userId !== 'guest' && sessionId) {
           const analysisData = {
               userId,
               sessionId,
@@ -121,6 +123,7 @@ export default function AnalysisPage() {
   }, [userId, getUser, getSession, insertAnalysis]);
 
   const awardBadge = async (code: string, name: string, currentUserId: string) => {
+    if (currentUserId === 'guest') return;
     const userBadges: any[] = await listBadges({table: 'badges'}) || [];
     const badgeDoc = userBadges.find(b => b.userId === currentUserId && b.badge_code === code);
 
@@ -142,8 +145,8 @@ export default function AnalysisPage() {
 
 
   const handleAddTask = async (title: string) => {
-    if (!userId) {
-        toast({ title: 'Task Added!', description: `(Guest) "${title}" has been added to your list. 💪` });
+    if (!userId || userId === 'guest') {
+        toast({ title: 'Task Added!', description: `(Guest) "${title}" has been added to your list. Sign up to save tasks.` });
         return;
     }
     try {

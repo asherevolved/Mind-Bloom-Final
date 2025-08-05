@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../convex/_generated/api";
+import { api } from "convex/_generated/api";
 
 export default function ConvexTest() {
   const list = useQuery(api.crud.list, { table: "messages", limit: 10 }) ?? [];

@@ -11,7 +11,7 @@ import { Logo } from '@/components/logo';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { useMutation, useConvexAuth } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from 'convex/_generated/api';
 
 export default function LoginPage() {
@@ -22,7 +22,6 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const { isLoading: isAuthLoading } = useConvexAuth();
   const listUsers = useMutation(api.crud.list);
   const insertUser = useMutation(api.crud.insert);
 
@@ -36,7 +35,7 @@ export default function LoginPage() {
 
       if (user) {
         // This is simplified, in a real app you might query by a unique field like email
-        const existingUsers = await listUsers({table: 'users'});
+        const existingUsers: any[] = await listUsers({table: 'users'});
         const userDoc = existingUsers?.find((u: any) => u.uid === user.uid);
         
         if (userDoc && userDoc.onboardingComplete) {
@@ -47,7 +46,7 @@ export default function LoginPage() {
                 uid: user.uid,
                 email: user.email,
                 name: user.displayName || email.split('@')[0],
-                createdAt: new Date()
+                createdAt: new Date().toISOString()
               }});
           }
           router.push('/onboarding');
@@ -75,7 +74,7 @@ export default function LoginPage() {
       const user = result.user;
 
       if (user) {
-        const existingUsers = await listUsers({table: 'users'});
+        const existingUsers: any[] = await listUsers({table: 'users'});
         const userDoc = existingUsers?.find((u: any) => u.uid === user.uid);
 
         if (!userDoc) {
@@ -83,7 +82,7 @@ export default function LoginPage() {
             uid: user.uid,
             email: user.email,
             name: user.displayName,
-            createdAt: new Date(),
+            createdAt: new Date().toISOString(),
             onboardingComplete: false
           }});
         }
@@ -129,7 +128,7 @@ export default function LoginPage() {
                 </div>
                 <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isLoading || isGoogleLoading}/>
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading || isGoogleLoading || isAuthLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || isGoogleLoading}>
                 {isLoading ? 'Logging in...' : 'Login'}
               </Button>
             </form>
@@ -142,7 +141,7 @@ export default function LoginPage() {
               </div>
             </div>
             <div className="space-y-2">
-               <Button variant="outline" className="w-full" onClick={handleGoogleLogin} disabled={isLoading || isGoogleLoading || isAuthLoading}>
+               <Button variant="outline" className="w-full" onClick={handleGoogleLogin} disabled={isLoading || isGoogleLoading}>
                  {isGoogleLoading ? (
                     <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

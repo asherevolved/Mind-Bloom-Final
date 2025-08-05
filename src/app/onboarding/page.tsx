@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { useMutation } from 'convex/react';
-import { api } from '../../convex/_generated/api';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from 'convex/_generated/api';
 
 const totalSteps = 4;
 
@@ -46,7 +46,7 @@ export default function OnboardingPage() {
   const [mood, setMood] = useState([5]);
   const [sleepQuality, setSleepQuality] = useState<string | null>(null);
   const [supportTags, setSupportTags] = useState<string[]>([]);
-  const [therapyTone, setTherapyTone] = useState<string | null>(null);
+  const [therapyTone, setTherapyTone] = useState<string | null>('Reflective Listener');
   const [user, setUser] = useState<User | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   
@@ -54,8 +54,8 @@ export default function OnboardingPage() {
   const { toast } = useToast();
 
   const updateUser = useMutation(api.crud.update);
-  const listUsers = useMutation(api.crud.list);
-  const listBadges = useMutation(api.crud.list);
+  const userList = useQuery(api.crud.list, user ? { table: 'users' } : 'skip' );
+  const badgeList = useQuery(api.crud.list, user ? { table: 'badges' } : 'skip' );
   const insertBadge = useMutation(api.crud.insert);
 
   useEffect(() => {
@@ -86,8 +86,8 @@ export default function OnboardingPage() {
   };
   
   const awardBadge = async (currentUserId: string, code: string, name: string) => {
-    const userBadges: any[] = await listBadges({table: 'badges'}) || [];
-    const badgeDoc = userBadges.find(b => b.userId === currentUserId && b.badge_code === code);
+    if (!badgeList) return;
+    const badgeDoc = badgeList.find((b: any) => b.userId === currentUserId && b.badge_code === code);
     if (!badgeDoc) {
         await insertBadge({ table: 'badges', data: {
             badge_code: code,
@@ -110,15 +110,14 @@ export default function OnboardingPage() {
         return;
     }
 
-    if (!user) {
+    if (!user || !userList) {
         toast({variant: 'destructive', title: 'Error', description: 'User not found. Please log in again.'});
         router.push('/');
         return;
     }
     
     try {
-        const allUsers: any[] = await listUsers({table: 'users'});
-        const userDoc: any = allUsers.find(u => u.uid === user.uid);
+        const userDoc: any = userList.find((u: any) => u.uid === user.uid);
 
         if(!userDoc) {
           toast({variant: 'destructive', title: 'Onboarding Error', description: "Could not find user record to update."});
@@ -166,7 +165,7 @@ export default function OnboardingPage() {
                   <CardTitle className="font-headline text-center">How are you feeling now?</CardTitle>
                   <CardDescription className="text-center">Let's get a baseline for your mood.</CardDescription>
                 </CardHeader>
-                <CardContent className="flex flex-col items-center gap-8">
+                <CardContent className="flex flex-col items-center gap-8 pt-6">
                   <CurrentMoodIcon.icon className={cn("w-24 h-24 transition-colors", CurrentMoodIcon.color)} />
                   <Slider value={mood} onValueChange={setMood} max={10} step={1} />
                 </CardContent>
@@ -179,7 +178,7 @@ export default function OnboardingPage() {
                   <CardTitle className="font-headline text-center">How did you sleep last night?</CardTitle>
                    <CardDescription className="text-center">Sleep is a cornerstone of mental wellness.</CardDescription>
                 </CardHeader>
-                <CardContent className="flex justify-around">
+                <CardContent className="flex justify-around pt-6">
                   {['Poor', 'Okay', 'Great'].map((quality) => (
                     <Button key={quality} variant={sleepQuality === quality ? 'default' : 'outline'} size="lg" onClick={() => setSleepQuality(quality)}>
                       {quality}
@@ -195,7 +194,7 @@ export default function OnboardingPage() {
                   <CardTitle className="font-headline text-center">What do you want to work on?</CardTitle>
                   <CardDescription className="text-center">Select your main areas of focus.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-4 pt-6">
                   {supportOptions.map((option) => (
                     <div key={option.id} className="flex items-center space-x-3 rounded-md border p-4 hover:bg-accent/50 has-[[data-state=checked]]:bg-accent">
                       <Checkbox id={option.id} onCheckedChange={() => handleSupportTagChange(option.label)} checked={supportTags.includes(option.label)} />
@@ -215,7 +214,7 @@ export default function OnboardingPage() {
                   <CardTitle className="font-headline text-center">Choose your therapist's style</CardTitle>
                   <CardDescription className="text-center">How would you like your AI to communicate?</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 pt-6">
                   {therapyPersonalities.map((p) => (
                      <Card 
                       key={p.id} 
