@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,8 @@ import {
 import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { supabase } from '@/lib/supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
+
 
 type Message = {
   role: 'user' | 'assistant';
@@ -38,44 +40,13 @@ export default function ChatPage() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [therapyTone, setTherapyTone] = useState<string | undefined>(undefined);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
 
-  useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const currentUser = session?.user;
-      setUser(currentUser ?? null);
-      if (currentUser) {
-        setIsGuest(false);
-        const { data } = await supabase
-            .from('profiles')
-            .select('therapy_tone')
-            .eq('id', currentUser.id)
-            .single();
-        setTherapyTone(data?.therapy_tone || 'Reflective Listener');
-      } else {
-        const guestSession = sessionStorage.getItem('isGuest') === 'true';
-        if (guestSession) {
-          setIsGuest(true);
-          setTherapyTone('Reflective Listener');
-        } else {
-          router.push('/');
-        }
-      }
-    });
-
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
-  }, [router]);
-
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-  
   const awardBadge = async (code: string, name: string) => {
     if (!user) return;
 
@@ -99,7 +70,97 @@ export default function ChatPage() {
             });
         }
     }
-  }
+  };
+  
+  const createNewSession = useCallback(async (currentUserId: string) => {
+    const newSessionId = uuidv4();
+    const { error } = await supabase
+      .from('chat_sessions')
+      .insert({ id: newSessionId, user_id: currentUserId });
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Could not create a new chat session.' });
+      return null;
+    }
+    
+    sessionStorage.setItem('sessionId', newSessionId);
+    setSessionId(newSessionId);
+    return newSessionId;
+  }, [toast]);
+
+
+  const fetchHistory = useCallback(async (sid: string) => {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('role, content')
+      .eq('session_id', sid)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to fetch chat history.' });
+      return;
+    }
+
+    setMessages(data as Message[]);
+  }, [toast]);
+
+
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const currentUser = session?.user;
+      setUser(currentUser ?? null);
+      if (currentUser) {
+        setIsGuest(false);
+        const { data } = await supabase
+            .from('profiles')
+            .select('therapy_tone')
+            .eq('id', currentUser.id)
+            .single();
+        setTherapyTone(data?.therapy_tone || 'Reflective Listener');
+
+        const storedSessionId = sessionStorage.getItem('sessionId');
+        if (storedSessionId) {
+            setSessionId(storedSessionId);
+            fetchHistory(storedSessionId);
+        } else {
+            createNewSession(currentUser.id);
+        }
+      } else {
+        const guestSession = sessionStorage.getItem('isGuest') === 'true';
+        if (guestSession) {
+          setIsGuest(true);
+          setTherapyTone('Reflective Listener');
+        } else {
+          router.push('/');
+        }
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [router, fetchHistory, createNewSession]);
+
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+  
+
+  const saveMessage = async (message: Message) => {
+      if (!user || !sessionId) return;
+      
+      const { error } = await supabase.from('chat_messages').insert({
+          session_id: sessionId,
+          user_id: user.id,
+          role: message.role,
+          content: message.content,
+      });
+
+      if (error) {
+          toast({ variant: 'destructive', title: 'Error', description: 'Failed to save message.' });
+      }
+  };
 
 
   const handleSend = async () => {
@@ -111,15 +172,17 @@ export default function ChatPage() {
       const newUserMessage: Message = { role: 'user', content: input };
       const newMessages = [...messages, newUserMessage];
       setMessages(newMessages);
+      await saveMessage(newUserMessage);
       setInput('');
       setIsLoading(true);
 
       try {
-        const chatHistory = newMessages.slice(-10).map(m => ({
+        const chatHistoryForAI = newMessages.slice(-10).map(m => ({
             role: m.role,
             content: m.content
         }));
-        const response = await therapistChat({ message: input, chatHistory, therapyTone });
+
+        const response = await therapistChat({ message: input, chatHistory: chatHistoryForAI, therapyTone });
         
         let audioUrl: string | undefined = undefined;
         if(isVoiceMode) {
@@ -130,6 +193,8 @@ export default function ChatPage() {
 
         const aiMessage: Message = { role: 'assistant', content: response.response, audioUrl };
         setMessages(prev => [...prev, aiMessage]);
+        await saveMessage(aiMessage);
+
 
         if (audioUrl) {
             const audio = new Audio(audioUrl);
@@ -164,6 +229,7 @@ export default function ChatPage() {
     }
     
     sessionStorage.setItem('sessionData', JSON.stringify({ messages }));
+    sessionStorage.removeItem('sessionId');
     router.push('/analysis');
   };
 
@@ -212,7 +278,7 @@ export default function ChatPage() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 space-y-6">
-           {messages.length === 0 && (
+           {messages.length === 0 && !isLoading && (
              <div className="text-center text-muted-foreground mt-8">
                 <Bot className="mx-auto h-12 w-12" />
                 <p className="mt-2">Hello! I'm here to listen. What's on your mind today?</p>
