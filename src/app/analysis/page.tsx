@@ -28,14 +28,13 @@ export default function AnalysisPage() {
 
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) {
-        const guestSession = sessionStorage.getItem('sessionData');
-        const isGuestSession = sessionStorage.getItem('isGuest') === 'true';
-        if (!guestSession && !isGuestSession) {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (!currentUser) {
+        const guestSession = sessionStorage.getItem('isGuest') === 'true';
+        setIsGuest(guestSession);
+        if (!guestSession) {
           router.push('/chat');
-        } else {
-            setIsGuest(true);
         }
       }
     });
@@ -46,7 +45,10 @@ export default function AnalysisPage() {
   }, [router]);
 
   useEffect(() => {
-    if (user === null && !isGuest) return;
+    // Wait until user status is determined.
+    if (user === undefined) {
+      return;
+    }
 
     const awardBadge = async (code: string, name: string) => {
         if (!user) return;
@@ -78,10 +80,18 @@ export default function AnalysisPage() {
       let transcript = '';
       let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
       
-      const guestSession = sessionStorage.getItem('sessionData');
-      if (guestSession) {
-          const messages = JSON.parse(guestSession).messages || [];
-          transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
+      const sessionData = sessionStorage.getItem('sessionData');
+      if (sessionData) {
+          try {
+            const parsedData = JSON.parse(sessionData);
+            const messages = parsedData.messages || [];
+            transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
+          } catch(e) {
+            console.error("Could not parse sessionData", e);
+            setError('There was an issue reading your session data.');
+            setIsLoading(false);
+            return;
+          }
       }
 
       if (!transcript) {
@@ -117,6 +127,11 @@ export default function AnalysisPage() {
         console.error(err);
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
         setError(`Failed to analyze the session: ${errorMessage}`);
+        toast({
+          variant: 'destructive',
+          title: 'Analysis Failed',
+          description: 'The AI could not process this conversation. Please try a new chat.',
+        });
       } finally {
         setIsLoading(false);
         sessionStorage.removeItem('sessionData');
