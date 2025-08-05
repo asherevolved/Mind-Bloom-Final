@@ -4,47 +4,78 @@
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Ear, Waves, Wind } from 'lucide-react';
+import { Ear, Waves, Wind, Play, Pause, Volume2, VolumeX } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
+import { Slider } from '@/components/ui/slider';
+import { cn } from '@/lib/utils';
 
 const sounds = [
     { name: 'Ocean Waves', icon: Waves, path: '/sounds/ocean-waves.mp3' },
     { name: 'Gentle Wind', icon: Wind, path: '/sounds/gentle-wind.mp3' },
     { name: 'White Noise', icon: Ear, path: '/sounds/white-noise.mp3' },
-]
+];
 
 export default function CalmPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [activeSound, setActiveSound] = useState<string | null>(null);
+  const [activeSoundPath, setActiveSoundPath] = useState<string | null>(null);
+  const [activeSoundName, setActiveSoundName] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState([50]);
 
   useEffect(() => {
     // Initialize audio only once on the client side
     audioRef.current = new Audio();
     audioRef.current.loop = true;
 
+    const audio = audioRef.current;
+    
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
+
     // Cleanup when component unmounts
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
+      if (audio) {
+        audio.pause();
+        audio.removeEventListener('play', handlePlay);
+        audio.removeEventListener('pause', handlePause);
         audioRef.current = null;
       }
     };
   }, []);
+  
+  useEffect(() => {
+    if (audioRef.current) {
+        audioRef.current.volume = volume[0] / 100;
+    }
+  }, [volume]);
 
-  const playSound = (soundPath: string) => {
+
+  const selectSound = (sound: {name: string, path: string}) => {
     if (!audioRef.current) return;
 
-    // If the same sound is clicked again, pause it and reset state
-    if (activeSound === soundPath) {
-      audioRef.current.pause();
-      setActiveSound(null);
+    if (activeSoundPath === sound.path) {
+        // If the same sound is clicked, toggle play/pause
+        togglePlayPause();
     } else {
-      // Otherwise, set the new sound and play it
-      audioRef.current.src = soundPath;
-      audioRef.current.play().catch(e => console.error("Error playing audio:", e));
-      setActiveSound(soundPath);
+        // If a new sound is selected, play it
+        setActiveSoundPath(sound.path);
+        setActiveSoundName(sound.name);
+        audioRef.current.src = sound.path;
+        audioRef.current.play().catch(e => console.error("Error playing audio:", e));
     }
   };
+
+  const togglePlayPause = () => {
+      if (!audioRef.current) return;
+      if (isPlaying) {
+          audioRef.current.pause();
+      } else {
+          audioRef.current.play().catch(e => console.error("Error playing audio:", e));
+      }
+  }
 
   return (
     <MainAppLayout>
@@ -90,18 +121,45 @@ export default function CalmPage() {
               <CardTitle>White Noise & Soundscapes</CardTitle>
               <CardDescription>Listen to calming sounds.</CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {sounds.map(sound => (
-                <Button 
-                    key={sound.name}
-                    variant={activeSound === sound.path ? 'default' : 'outline'} 
-                    className="h-20 flex-col gap-2"
-                    onClick={() => playSound(sound.path)}
-                >
-                    <sound.icon />
-                    <span>{sound.name}</span>
-                </Button>
-              ))}
+            <CardContent className="flex flex-col gap-4">
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {sounds.map(sound => (
+                    <Button 
+                        key={sound.name}
+                        variant={activeSoundPath === sound.path ? 'default' : 'outline'} 
+                        className="h-20 flex-col gap-2"
+                        onClick={() => selectSound(sound)}
+                    >
+                        <sound.icon />
+                        <span>{sound.name}</span>
+                    </Button>
+                ))}
+              </div>
+
+               {activeSoundPath && (
+                <div className="mt-4 p-4 rounded-md border bg-accent/20">
+                    <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                            <p className="text-sm text-muted-foreground">Now Playing</p>
+                            <h4 className="font-semibold">{activeSoundName}</h4>
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={togglePlayPause}>
+                            {isPlaying ? <Pause className="h-6 w-6" /> : <Play className="h-6 w-6" />}
+                        </Button>
+                    </div>
+                    <div className="flex items-center gap-2 mt-3">
+                        {volume[0] > 0 ? <Volume2 className="h-5 w-5"/> : <VolumeX className="h-5 w-5"/>}
+                        <Slider
+                            defaultValue={[50]}
+                            max={100}
+                            step={1}
+                            value={volume}
+                            onValueChange={setVolume}
+                            className="w-full"
+                        />
+                    </div>
+                </div>
+               )}
             </CardContent>
           </Card>
         </div>
