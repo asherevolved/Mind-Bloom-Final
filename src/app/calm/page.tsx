@@ -3,25 +3,43 @@
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Ear, Waves, Wind, Shuffle } from 'lucide-react';
-import { useState } from 'react';
+import { Ear, Waves, Wind, CloudRain, Trees } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
 
 const sounds = [
-    { name: 'Ocean Waves', icon: Waves },
-    { name: 'Gentle Wind', icon: Wind },
-    { name: 'White Noise', icon: Ear },
+    { name: 'Ocean Waves', icon: Waves, path: '/sounds/ocean-waves.mp3' },
+    { name: 'Gentle Wind', icon: Wind, path: '/sounds/gentle-wind.mp3' },
+    { name: 'White Noise', icon: Ear, path: '/sounds/white-noise.mp3' },
+    { name: 'Rainfall', icon: CloudRain, path: '/sounds/rainfall.mp3' },
+    { name: 'Forest', icon: Trees, path: '/sounds/forest.mp3' },
 ]
 
 export default function CalmPage() {
   const [activeSound, setActiveSound] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const playSound = (soundName: string) => {
-    // In a real app, you would use an audio library to play sounds.
-    // For this prototype, we'll just track the active state.
-    if (activeSound === soundName) {
-      setActiveSound(null); // Toggle off
-    } else {
-      setActiveSound(soundName);
+  useEffect(() => {
+    // Create the audio element on the client side
+    audioRef.current = new Audio();
+    audioRef.current.loop = true;
+
+    // Cleanup audio element on component unmount
+    return () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+    }
+  }, []);
+
+  const playSound = (soundName: string, soundPath: string) => {
+    if (audioRef.current) {
+        if (activeSound === soundName) {
+          audioRef.current.pause();
+          setActiveSound(null);
+        } else {
+          audioRef.current.src = soundPath;
+          audioRef.current.play();
+          setActiveSound(soundName);
+        }
     }
   };
 
@@ -75,16 +93,12 @@ export default function CalmPage() {
                     key={sound.name}
                     variant={activeSound === sound.name ? 'default' : 'outline'} 
                     className="h-20 flex-col gap-2"
-                    onClick={() => playSound(sound.name)}
+                    onClick={() => playSound(sound.name, sound.path)}
                 >
                     <sound.icon />
                     <span>{sound.name}</span>
                 </Button>
               ))}
-              <Button variant="secondary" className="h-20 flex-col gap-2">
-                 <Shuffle />
-                <span>Surprise Me</span>
-              </Button>
             </CardContent>
           </Card>
         </div>
