@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -28,27 +29,7 @@ export default function LoginPage() {
 
       if (error) throw error;
       
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('onboarding_complete')
-        .eq('id', data.user.id)
-        .single();
-      
-      if (profileError) {
-        // This case might happen if the trigger failed or for very old accounts.
-        // We can try to create a profile for them.
-        if (profileError.code === 'PGRST116') {
-           router.push('/onboarding');
-           return;
-        }
-        throw profileError;
-      }
-
-      if (profile?.onboarding_complete) {
-        router.push('/dashboard');
-      } else {
-        router.push('/onboarding');
-      }
+      router.push('/dashboard');
 
     } catch (error: any) {
       toast({ variant: 'destructive', title: 'Login Failed', description: error.message });
