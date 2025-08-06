@@ -158,6 +158,7 @@ export default function ChatPage() {
         .single();
       
       if (error || !data) {
+        console.error('Create conversation error:', error);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not create a new conversation.' });
         return null;
       }
@@ -181,14 +182,19 @@ export default function ChatPage() {
     
     try {
         if (!currentConversationId) {
-            currentConversationId = await createNewConversation(user.id, currentInput);
-            if (!currentConversationId) {
+            const newId = await createNewConversation(user.id, currentInput);
+            if (!newId) {
                  setIsLoading(false);
                  setMessages(prev => prev.slice(0, -1)); // Clear the optimistic user message
                  setInput(currentInput);
                  return;
             };
-            setActiveConversationId(currentConversationId);
+            currentConversationId = newId;
+            setActiveConversationId(newId);
+        }
+        
+        if(!currentConversationId) {
+            throw new Error("Conversation ID is missing after creation attempt.");
         }
 
         await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput });
@@ -406,13 +412,14 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()}
-              disabled={isLoading || isEndingSession}
+              disabled={isLoading || isEndingSession || !user}
               className="flex-1"
             />
-            <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession}><Send /></Button>
+            <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession || !user}><Send /></Button>
           </div>
         </footer>
       </div>
     </div>
   );
-}
+
+    
