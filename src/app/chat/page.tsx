@@ -220,9 +220,9 @@ export default function ChatPage() {
             new Audio(audioUrl).play();
         }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to get response from AI. Please try again.' });
+      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI. Please try again.' });
     } finally {
       setIsLoading(false);
     }
@@ -424,3 +424,5 @@ export default function ChatPage() {
     </div>
   );
 }
+
+    
