@@ -34,10 +34,10 @@ Your Core Principles:
 
 Chat History:
 {{#each chatHistory}}
-{{#if (eq role 'user')}}
+{{#if isUser}}
 User: {{content}}
 {{/if}}
-{{#if (eq role 'assistant')}}
+{{#if isAssistant}}
 Bloom: {{content}}
 {{/if}}
 {{/each}}
@@ -56,8 +56,15 @@ export const therapistChatStreamFlow = ai.defineFlow(
     streamSchema: z.object({chunk: TherapistChatStreamOutputSchema}),
   },
   async (input, stream) => {
+    const processedChatHistory = input.chatHistory?.map(msg => ({
+      ...msg,
+      isUser: msg.role === 'user',
+      isAssistant: msg.role === 'assistant',
+    })) || [];
+
     const {prompt: renderedPrompt} = await streamingPrompt.render({
       ...input,
+      chatHistory: processedChatHistory,
     });
     
     const {stream: resultStream, response} = await ai.generate({

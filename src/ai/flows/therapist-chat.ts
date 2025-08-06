@@ -35,10 +35,10 @@ Your Core Principles:
 
 Chat History:
 {{#each chatHistory}}
-{{#if (eq role 'user')}}
+{{#if isUser}}
 User: {{content}}
 {{/if}}
-{{#if (eq role 'assistant')}}
+{{#if isAssistant}}
 Bloom: {{content}}
 {{/if}}
 {{/each}}
@@ -55,8 +55,15 @@ const therapistChatFlow = ai.defineFlow(
     outputSchema: TherapistChatOutputSchema,
   },
   async input => {
+    const processedChatHistory = input.chatHistory?.map(msg => ({
+      ...msg,
+      isUser: msg.role === 'user',
+      isAssistant: msg.role === 'assistant',
+    })) || [];
+
     const {prompt: renderedPrompt} = await prompt.render({
         ...input,
+        chatHistory: processedChatHistory,
     });
 
     const {output} = await ai.generate({
