@@ -111,7 +111,7 @@ export default function ChatPage() {
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to fetch messages.' });
       setMessages([]);
     } else {
-      setMessages(data as Message[]);
+      setMessages(data.map(m => ({id: m.id, role: m.role as 'user' | 'assistant', content: m.content})));
     }
   }, [toast]);
 
@@ -198,7 +198,7 @@ export default function ChatPage() {
     // Save user message in the background. Don't block the AI call.
     supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput }).then(({data, error}) => {
         if(error) console.error("Error saving user message:", error);
-        else {
+        else if (data) {
             // Update the optimistic message with the real ID from the DB
             setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: data?.[0]?.id} : msg));
         }
@@ -351,7 +351,7 @@ export default function ChatPage() {
 
   return (
     <MainAppLayout>
-      <div className="flex-1 grid grid-cols-[auto_1fr] h-[calc(100vh_-_var(--header-height))]">
+      <div className="flex-1 grid grid-cols-[auto_1fr] h-[calc(100vh_-_57px)]">
         {/* Sidebar */}
         <aside className="w-64 flex-shrink-0 border-r bg-background flex flex-col">
             <div className="p-4 border-b">

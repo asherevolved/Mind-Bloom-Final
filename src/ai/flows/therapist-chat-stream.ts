@@ -11,6 +11,7 @@
 import {ai} from '@/ai/genkit';
 import {googleAI} from '@genkit-ai/googleai';
 import {z} from 'genkit';
+import { therapistChat } from './therapist-chat';
 
 
 // Re-using the same input schema from the non-streaming version
@@ -78,17 +79,21 @@ export const therapistChatStreamFlow = ai.defineFlow(
       isUser: msg.role === 'user',
       isAssistant: msg.role === 'assistant',
     }));
-
+    
+    const prompt = await streamingPrompt.render({
+      ...input,
+      chatHistory: processedChatHistory,
+    });
+    
     const {stream: resultStream, response} = await ai.generate({
-      prompt: streamingPrompt.prompt,
+      prompt: prompt.prompt,
       model: googleAI.model('gemini-1.5-flash-latest'),
-      input: {...input, chatHistory: processedChatHistory},
       stream: true,
     });
 
     for await (const chunk of resultStream) {
-      if (chunk.output?.response) {
-        stream.write({chunk: chunk.output.response});
+      if (chunk.output) {
+        stream.write({chunk: chunk.output as string});
       }
     }
      // Wait for the full response to be available for saving.
