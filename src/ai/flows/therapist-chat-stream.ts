@@ -79,7 +79,7 @@ const therapistChatStreamFlow = ai.defineFlow(
       isAssistant: msg.role === 'assistant',
     }));
 
-    const {stream: resultStream} = await ai.generate({
+    const {stream: resultStream, response} = await ai.generate({
       prompt: streamingPrompt.prompt,
       model: streamingPrompt.model,
       input: {...input, chatHistory: processedChatHistory},
@@ -91,6 +91,8 @@ const therapistChatStreamFlow = ai.defineFlow(
         stream.write({chunk: chunk.output.response});
       }
     }
+     // Wait for the full response to be available for saving.
+    await response;
   }
 );
 

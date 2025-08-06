@@ -14,7 +14,7 @@ import {z}from 'genkit';
 import {googleAI} from '@genkit-ai/googleai';
 
 
-const TherapistChatInputSchema = z.object({
+export const TherapistChatInputSchema = z.object({
   message: z.string().describe('The user message to respond to.'),
   chatHistory: z.array(z.object({
     role: z.enum(['user', 'assistant']).describe('The role of the message sender.'),
