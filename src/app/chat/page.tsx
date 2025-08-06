@@ -150,6 +150,10 @@ export default function ChatPage() {
   };
   
   const createNewConversation = async (currentUserId: string, firstMessage: string): Promise<string | null> => {
+      if (!user) {
+          toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to start a chat.' });
+          return null;
+      }
       const title = firstMessage.substring(0, 40) + (firstMessage.length > 40 ? '...' : '');
       const { data, error } = await supabase
         .from('conversations')
@@ -421,5 +425,4 @@ export default function ChatPage() {
       </div>
     </div>
   );
-
-    
+}
