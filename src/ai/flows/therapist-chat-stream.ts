@@ -81,7 +81,7 @@ export const therapistChatStreamFlow = ai.defineFlow(
 
     const {stream: resultStream, response} = await ai.generate({
       prompt: streamingPrompt.prompt,
-      model: streamingPrompt.model,
+      model: googleAI.model('gemini-1.5-flash-latest'),
       input: {...input, chatHistory: processedChatHistory},
       stream: true,
     });
