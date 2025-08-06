@@ -21,22 +21,7 @@ const TherapistChatStreamOutputSchema = z.string();
 // Define the streaming prompt, similar to the non-streaming one.
 const streamingPrompt = ai.definePrompt({
   name: 'therapistChatStreamingPrompt',
-  input: {
-    schema: z.object({
-      message: TherapistChatInputSchema.shape.message,
-      chatHistory: z
-        .array(
-          z.object({
-            role: z.enum(['user', 'assistant']),
-            content: z.string(),
-            isUser: z.boolean(),
-            isAssistant: z.boolean(),
-          })
-        )
-        .optional(),
-      therapyTone: TherapistChatInputSchema.shape.therapyTone,
-    }),
-  },
+  input: {schema: TherapistChatInputSchema},
   output: {schema: z.object({response: TherapistChatStreamOutputSchema})},
   prompt: `You are an AI therapist named Bloom. Your primary goal is to provide mental health support with deep empathy, compassion, and understanding. You are a safe, non-judgmental space for the user to explore their feelings.
 
@@ -49,10 +34,10 @@ Your Core Principles:
 
 Chat History:
 {{#each chatHistory}}
-{{#if isUser}}
+{{#if (eq role 'user')}}
 User: {{content}}
 {{/if}}
-{{#if isAssistant}}
+{{#if (eq role 'assistant')}}
 Bloom: {{content}}
 {{/if}}
 {{/each}}
@@ -71,15 +56,8 @@ export const therapistChatStreamFlow = ai.defineFlow(
     streamSchema: z.object({chunk: TherapistChatStreamOutputSchema}),
   },
   async (input, stream) => {
-    const processedChatHistory = input.chatHistory?.map(msg => ({
-      ...msg,
-      isUser: msg.role === 'user',
-      isAssistant: msg.role === 'assistant',
-    }));
-    
     const {prompt: renderedPrompt} = await streamingPrompt.render({
       ...input,
-      chatHistory: processedChatHistory,
     });
     
     const {stream: resultStream, response} = await ai.generate({
