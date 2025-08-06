@@ -72,17 +72,18 @@ export default function ChatPage() {
       .from('conversations')
       .select('id, title, created_at')
       .eq('user_id', currentUserId)
-      .order('created_at', { ascending: false });
 
     if (error) {
       toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch conversations.' });
     } else {
-      setConversations(data);
+      // Sort on the client side for robustness
+      const sortedConversations = data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setConversations(sortedConversations);
       const lastActiveId = localStorage.getItem('activeConversationId');
       if (lastActiveId && data.some(c => c.id === lastActiveId)) {
         setActiveConversationId(lastActiveId);
-      } else if (data.length > 0) {
-        setActiveConversationId(data[0].id);
+      } else if (sortedConversations.length > 0) {
+        setActiveConversationId(sortedConversations[0].id);
       } else {
         setActiveConversationId(null);
         setMessages([]);
@@ -222,10 +223,11 @@ export default function ChatPage() {
   };
   
   const handleEndSession = async () => {
-    if (messages.length === 0 || !activeConversationId) {
-      router.push('/dashboard');
+    if (messages.length === 0) {
+      toast({ variant: 'destructive', title: 'Cannot analyze empty chat', description: "Please send a few messages first."});
       return;
     }
+    // The chat is already saved, so just pass the current message history to analysis.
     sessionStorage.setItem('sessionData', JSON.stringify({ messages }));
     router.push('/analysis');
   };
@@ -371,3 +373,5 @@ export default function ChatPage() {
     </div>
   );
 }
+
+    
