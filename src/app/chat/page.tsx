@@ -25,7 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { therapistChatStream } from '@/ai/flows/therapist-chat-stream';
+import { therapistChatStreamFlow } from '@/ai/flows/therapist-chat-stream';
 import { MainAppLayout } from '@/components/main-app-layout';
 
 type Message = {
@@ -214,7 +214,7 @@ export default function ChatPage() {
 
         const chatHistoryForAI = [...messages, newUserMessage].slice(-10).map(m => ({ role: m.role, content: m.content }));
         
-        const stream = await therapistChatStream({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
+        const stream = await therapistChatStreamFlow({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
         
         let finalResponse = '';
 

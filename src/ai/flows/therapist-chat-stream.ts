@@ -5,12 +5,12 @@
  *
  * This flow is optimized for real-time, token-by-token responses.
  *
- * - therapistChatStream - A function that handles the streaming chatbot process.
+ * - therapistChatStreamFlow - The Genkit flow that handles the streaming chatbot process.
  */
 
 import {ai} from '@/ai/genkit';
 import {googleAI} from '@genkit-ai/googleai';
-import {z, runFlow} from 'genkit';
+import {z} from 'genkit';
 
 
 // Re-using the same input schema from the non-streaming version
@@ -65,7 +65,7 @@ Bloom's Caring & Empathetic Response (as a {{therapyTone}}):`,
 });
 
 // Define the main streaming flow.
-const therapistChatStreamFlow = ai.defineFlow(
+export const therapistChatStreamFlow = ai.defineFlow(
   {
     name: 'therapistChatStreamFlow',
     inputSchema: TherapistChatInputSchema,
@@ -95,8 +95,3 @@ const therapistChatStreamFlow = ai.defineFlow(
     await response;
   }
 );
-
-
-export async function therapistChatStream(input: TherapistChatInput) {
-    return runFlow(therapistChatStreamFlow, input);
-}
