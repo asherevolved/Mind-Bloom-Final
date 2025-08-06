@@ -7,12 +7,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { User } from '@supabase/supabase-js';
 
 export type Habit = {
-  id: number;
+  id: string; // Changed to string for UUID
   title: string;
   category: string;
   streak_count: number;
   last_completed: string | null;
   user_id: string;
+  created_at: string;
 };
 
 export default function HabitsPage() {

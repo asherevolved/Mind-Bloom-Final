@@ -16,6 +16,7 @@ const navItems = [
   { href: '/chat', icon: MessageCircle, label: 'Chat' },
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { href: '/journal', icon: Brain, label: 'Journal' },
+  { href: '/habits', icon: BarChart3, label: 'Habits' },
   { href: '/calm', icon: HeartPulse, label: 'Calm' },
   { href: '/badges', icon: Star, label: 'Badges' },
   { href: '/profile/settings', icon: User, label: 'Profile' },
@@ -39,7 +40,7 @@ export function Header() {
                 href={item.href}
                 className={cn(
                   'transition-colors hover:text-foreground/80',
-                  pathname === item.href ? 'text-foreground' : 'text-foreground/60'
+                  pathname.startsWith(item.href) ? 'text-foreground' : 'text-foreground/60'
                 )}
               >
                 {item.label}
@@ -71,7 +72,7 @@ export function Header() {
                       onClick={() => setIsOpen(false)}
                       className={cn(
                         'flex items-center gap-3 rounded-md p-2 text-lg font-medium transition-colors hover:text-foreground/80',
-                         pathname === item.href ? 'text-foreground bg-accent' : 'text-foreground/60'
+                         pathname.startsWith(item.href) ? 'text-foreground bg-accent' : 'text-foreground/60'
                       )}
                     >
                       <item.icon className="h-5 w-5" />

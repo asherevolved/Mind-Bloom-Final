@@ -5,7 +5,7 @@ export function MainAppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="relative flex min-h-screen w-full flex-col bg-background">
       <Header />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 flex flex-col">{children}</main>
     </div>
   );
 }
