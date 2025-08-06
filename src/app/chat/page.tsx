@@ -297,132 +297,130 @@ export default function ChatPage() {
   }
 
   return (
-    <MainAppLayout>
-        <div className="flex h-[calc(100vh-57px)]">
-        {/* Sidebar */}
-        <aside className="w-64 flex-shrink-0 border-r bg-background flex flex-col">
-            <div className="p-4 border-b">
-                <Button className="w-full" onClick={handleNewChat}><Plus className="mr-2"/> New Chat</Button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-                {isLoadingConversations ? (
-                    <div className="p-4 space-y-2">
-                        {[...Array(5)].map((_, i) => <div key={i} className="h-10 w-full bg-muted rounded animate-pulse" />)}
-                    </div>
-                ) : conversations.length > 0 ? (
-                    <nav className="p-2">
-                        {conversations.map(convo => (
-                            <div key={convo.id} className="relative group">
-                                <Link href="#"
-                                    onClick={(e) => { e.preventDefault(); setActiveConversationId(convo.id);}}
-                                    className={cn(
-                                        "block w-full text-left truncate p-2 rounded-md text-sm transition-colors",
-                                        activeConversationId === convo.id ? "bg-primary/20 text-primary-foreground" : "hover:bg-muted"
-                                    )}
-                                >
-                                    {convo.title || "New Conversation"}
-                                </Link>
-                                <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 opacity-0 group-hover:opacity-100">
-                                            <Trash2 className="h-4 w-4 text-muted-foreground"/>
-                                        </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                        <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            This will permanently delete this conversation and all of its messages. This action cannot be undone.
-                                        </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleDeleteConversation(convo.id)}>Delete</AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
-                            </div>
-                        ))}
-                    </nav>
-                ) : (
-                    <div className="p-4 text-center text-sm text-muted-foreground">No active conversations.</div>
-                )}
-            </div>
-            <div className="p-4 border-t text-xs text-muted-foreground">Mind Bloom v1.0</div>
-        </aside>
+    <div className="flex h-screen">
+      {/* Sidebar */}
+      <aside className="w-64 flex-shrink-0 border-r bg-background flex flex-col">
+          <div className="p-4 border-b">
+              <Button className="w-full" onClick={handleNewChat}><Plus className="mr-2"/> New Chat</Button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+              {isLoadingConversations ? (
+                  <div className="p-4 space-y-2">
+                      {[...Array(5)].map((_, i) => <div key={i} className="h-10 w-full bg-muted rounded animate-pulse" />)}
+                  </div>
+              ) : conversations.length > 0 ? (
+                  <nav className="p-2">
+                      {conversations.map(convo => (
+                          <div key={convo.id} className="relative group">
+                              <Link href="#"
+                                  onClick={(e) => { e.preventDefault(); setActiveConversationId(convo.id);}}
+                                  className={cn(
+                                      "block w-full text-left truncate p-2 rounded-md text-sm transition-colors",
+                                      activeConversationId === convo.id ? "bg-primary/20 text-primary-foreground" : "hover:bg-muted"
+                                  )}
+                              >
+                                  {convo.title || "New Conversation"}
+                              </Link>
+                              <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 opacity-0 group-hover:opacity-100">
+                                          <Trash2 className="h-4 w-4 text-muted-foreground"/>
+                                      </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                          This will permanently delete this conversation and all of its messages. This action cannot be undone.
+                                      </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => handleDeleteConversation(convo.id)}>Delete</AlertDialogAction>
+                                      </AlertDialogFooter>
+                                  </AlertDialogContent>
+                              </AlertDialog>
+                          </div>
+                      ))}
+                  </nav>
+              ) : (
+                  <div className="p-4 text-center text-sm text-muted-foreground">No active conversations.</div>
+              )}
+          </div>
+          <div className="p-4 border-t text-xs text-muted-foreground">Mind Bloom v1.0</div>
+      </aside>
 
-        {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col">
-            <header className="flex items-center justify-between border-b p-4">
-            <div className="flex items-center gap-3">
-                <Avatar><AvatarFallback><Bot /></AvatarFallback></Avatar>
-                <div>
-                <h1 className="font-bold">AI Therapist</h1>
-                <p className="text-xs text-green-500">Online</p>
-                </div>
-            </div>
-            <div className="flex items-center gap-2">
-                <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={() => setIsVoiceMode(!isVoiceMode)} disabled={isLoading}><Mic /></Button>
-                <AlertDialog>
-                <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm" disabled={messages.length === 0 || !activeConversationId || isEndingSession}>
-                        {isEndingSession ? "Analyzing..." : <><PhoneOff className="mr-2"/> End & Analyze</>}
-                    </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                    <AlertDialogHeader><AlertDialogTitle>End your session?</AlertDialogTitle><AlertDialogDescription>This will end the current chat, save the analysis, and start a new chat session.</AlertDialogDescription></AlertDialogHeader>
-                    <AlertDialogFooter><AlertDialogCancel>Continue Chat</AlertDialogCancel><AlertDialogAction onClick={handleEndSession}>End & Analyze</AlertDialogAction></AlertDialogFooter>
-                </AlertDialogContent>
-                </AlertDialog>
-            </div>
-            </header>
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col">
+          <header className="flex items-center justify-between border-b p-4">
+          <div className="flex items-center gap-3">
+              <Avatar><AvatarFallback><Bot /></AvatarFallback></Avatar>
+              <div>
+              <h1 className="font-bold">AI Therapist</h1>
+              <p className="text-xs text-green-500">Online</p>
+              </div>
+          </div>
+          <div className="flex items-center gap-2">
+              <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={() => setIsVoiceMode(!isVoiceMode)} disabled={isLoading}><Mic /></Button>
+              <AlertDialog>
+              <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm" disabled={messages.length === 0 || !activeConversationId || isEndingSession}>
+                      {isEndingSession ? "Analyzing..." : <><PhoneOff className="mr-2"/> End & Analyze</>}
+                  </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                  <AlertDialogHeader><AlertDialogTitle>End your session?</AlertDialogTitle><AlertDialogDescription>This will end the current chat, save the analysis, and start a new chat session.</AlertDialogDescription></AlertDialogHeader>
+                  <AlertDialogFooter><AlertDialogCancel>Continue Chat</AlertDialogCancel><AlertDialogAction onClick={handleEndSession}>End & Analyze</AlertDialogAction></AlertDialogFooter>
+              </AlertDialogContent>
+              </AlertDialog>
+          </div>
+          </header>
 
-            <main className="flex-1 overflow-y-auto p-4 space-y-6">
-            {!activeConversationId && messages.length === 0 && !isLoading && (
-                <div className="text-center text-muted-foreground mt-8 h-full flex flex-col justify-center items-center">
-                    <MessageSquare className="mx-auto h-12 w-12" />
-                    <p className="mt-2">Start a new conversation or select one from the list.</p>
-                </div>
-            )}
-            {messages.map((msg, index) => (
-                <div key={msg.id || index} className={`flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                {msg.role === 'assistant' && <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>}
-                <div className={`max-w-xs rounded-lg px-4 py-2 sm:max-w-md lg:max-w-lg ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    {msg.audioUrl && <Button variant="ghost" size="icon" className="h-7 w-7 mt-1" onClick={() => new Audio(msg.audioUrl!).play()}><User className="h-4 w-4" /></Button>}
-                </div>
-                {msg.role === 'user' && <Avatar className="h-8 w-8"><AvatarFallback><User /></AvatarFallback></Avatar>}
-                </div>
-            ))}
-            {isLoading && (
-                <div className="flex items-end gap-2 justify-start">
-                <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>
-                <div className="rounded-lg px-4 py-2 bg-muted flex items-center gap-1">
-                    <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                    <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                    <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce"></span>
-                </div>
-                </div>
-            )}
-            <div ref={messagesEndRef} />
-            </main>
+          <main className="flex-1 overflow-y-auto p-4 space-y-6">
+          {!activeConversationId && messages.length === 0 && !isLoading && (
+              <div className="text-center text-muted-foreground mt-8 h-full flex flex-col justify-center items-center">
+                  <MessageSquare className="mx-auto h-12 w-12" />
+                  <p className="mt-2">Start a new conversation or select one from the list.</p>
+              </div>
+          )}
+          {messages.map((msg, index) => (
+              <div key={msg.id || index} className={`flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {msg.role === 'assistant' && <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>}
+              <div className={`max-w-xs rounded-lg px-4 py-2 sm:max-w-md lg:max-w-lg ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                  {msg.audioUrl && <Button variant="ghost" size="icon" className="h-7 w-7 mt-1" onClick={() => new Audio(msg.audioUrl!).play()}><User className="h-4 w-4" /></Button>}
+              </div>
+              {msg.role === 'user' && <Avatar className="h-8 w-8"><AvatarFallback><User /></AvatarFallback></Avatar>}
+              </div>
+          ))}
+          {isLoading && (
+              <div className="flex items-end gap-2 justify-start">
+              <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>
+              <div className="rounded-lg px-4 py-2 bg-muted flex items-center gap-1">
+                  <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce"></span>
+              </div>
+              </div>
+          )}
+          <div ref={messagesEndRef} />
+          </main>
 
-            <footer className="border-t p-4 bg-background">
-            <div className="flex items-center gap-2">
-                <Input
-                type="text"
-                placeholder="Type your message..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()}
-                disabled={isLoading || isEndingSession || !user}
-                className="flex-1"
-                />
-                <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession || !user}><Send /></Button>
-            </div>
-            </footer>
-        </div>
-        </div>
-    </MainAppLayout>
+          <footer className="border-t p-4 bg-background">
+          <div className="flex items-center gap-2">
+              <Input
+              type="text"
+              placeholder="Type your message..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()}
+              disabled={isLoading || isEndingSession || !user}
+              className="flex-1"
+              />
+              <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession || !user}><Send /></Button>
+          </div>
+          </footer>
+      </div>
+    </div>
   );
 }
