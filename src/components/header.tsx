@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -15,7 +16,6 @@ const navItems = [
   { href: '/chat', icon: MessageCircle, label: 'Chat' },
   { href: '/tasks', icon: CheckSquare, label: 'Tasks' },
   { href: '/journal', icon: Brain, label: 'Journal' },
-  { href: '/analysis', icon: BarChart3, label: 'Analysis' },
   { href: '/calm', icon: HeartPulse, label: 'Calm' },
   { href: '/badges', icon: Star, label: 'Badges' },
   { href: '/profile/settings', icon: User, label: 'Profile' },
