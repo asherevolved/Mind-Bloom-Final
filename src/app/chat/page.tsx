@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation';
 import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Mic, MicOff, Send, PhoneOff, User, Volume2, Trophy, Trash2, Plus, MessageSquare, Loader2, MoreHorizontal } from 'lucide-react';
+import { Bot, Mic, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { therapistChat } from '@/ai/flows/therapist-chat';
+import { analyzeSession } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,
@@ -38,6 +39,7 @@ type Conversation = {
   id: string;
   title: string;
   created_at: string;
+  status: 'active' | 'ended';
 };
 
 export default function ChatPage() {
@@ -47,6 +49,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [therapyTone, setTherapyTone] = useState<string | undefined>(undefined);
@@ -72,25 +75,26 @@ export default function ChatPage() {
       .from('conversations')
       .select('id, title, created_at')
       .eq('user_id', currentUserId)
+      .eq('status', 'active')
+      .order('updated_at', { ascending: false });
 
     if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Could not fetch conversations.' });
+      console.warn('Could not fetch conversations:', error);
+      setConversations([]);
     } else {
-      // Sort on the client side for robustness
-      const sortedConversations = data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      setConversations(sortedConversations);
+      setConversations(data as Conversation[]);
       const lastActiveId = localStorage.getItem('activeConversationId');
       if (lastActiveId && data.some(c => c.id === lastActiveId)) {
         setActiveConversationId(lastActiveId);
-      } else if (sortedConversations.length > 0) {
-        setActiveConversationId(sortedConversations[0].id);
+      } else if (data.length > 0) {
+        setActiveConversationId(data[0].id);
       } else {
         setActiveConversationId(null);
         setMessages([]);
       }
     }
     setIsLoadingConversations(false);
-  }, [toast]);
+  }, []);
 
   const fetchMessages = useCallback(async (conversationId: string) => {
     if (!conversationId) {
@@ -118,7 +122,7 @@ export default function ChatPage() {
       if (currentUser) {
         const { data } = await supabase.from('profiles').select('therapy_tone').eq('id', currentUser.id).single();
         setTherapyTone(data?.therapy_tone || 'Reflective Listener');
-        fetchConversations(currentUser.id);
+        await fetchConversations(currentUser.id);
       } else {
         router.push('/');
       }
@@ -163,12 +167,13 @@ export default function ChatPage() {
   };
 
   const handleSend = async () => {
-    if (!input.trim() || !user) return;
+    if (!input.trim() || !user || isEndingSession) return;
 
     if (messages.length === 0) awardBadge('therapy_starter', 'Therapy Starter');
 
     const newUserMessage: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, newUserMessage]);
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
 
@@ -176,21 +181,23 @@ export default function ChatPage() {
     
     try {
         if (!currentConversationId) {
-            currentConversationId = await createNewConversation(user.id, input);
+            currentConversationId = await createNewConversation(user.id, currentInput);
             if (!currentConversationId) {
                  setIsLoading(false);
-                 setMessages([]); // Clear the optimistic user message
+                 setMessages(prev => prev.slice(0, -1)); // Clear the optimistic user message
+                 setInput(currentInput);
                  return;
             };
             setActiveConversationId(currentConversationId);
         }
 
-        // Save user message
-        await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: input });
+        await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput });
         
         const chatHistoryForAI = [...messages, newUserMessage].slice(-10).map(m => ({ role: m.role, content: m.content }));
-        const response = await therapistChat({ message: input, chatHistory: chatHistoryForAI, therapyTone });
+        const response = await therapistChat({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
         
+        await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'assistant', content: response.response });
+
         let audioUrl: string | undefined = undefined;
         if (isVoiceMode) {
             const audioResponse = await textToSpeech({ text: response.response });
@@ -200,10 +207,6 @@ export default function ChatPage() {
 
         const aiMessage: Message = { role: 'assistant', content: response.response, audioUrl };
         setMessages(prev => [...prev, aiMessage]);
-        
-        // Save AI message
-        await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'assistant', content: response.response });
-        await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', currentConversationId);
 
         if (audioUrl) {
             new Audio(audioUrl).play();
@@ -217,34 +220,72 @@ export default function ChatPage() {
     }
   };
 
-  const toggleVoiceMode = () => {
-    setIsVoiceMode(!isVoiceMode);
-    toast({ title: `Voice mode ${!isVoiceMode ? 'enabled' : 'disabled'}.` });
-  };
-  
   const handleEndSession = async () => {
-    if (messages.length === 0) {
+    if (!activeConversationId || !user || messages.length === 0) {
       toast({ variant: 'destructive', title: 'Cannot analyze empty chat', description: "Please send a few messages first."});
       return;
     }
-    // The chat is already saved, so just pass the current message history to analysis.
-    sessionStorage.setItem('sessionData', JSON.stringify({ messages }));
-    router.push('/analysis');
+    
+    setIsEndingSession(true);
+    toast({ title: "Ending session...", description: "Please wait while we analyze your conversation." });
+
+    try {
+        const { error: updateError } = await supabase
+            .from('conversations')
+            .update({ status: 'ended', updated_at: new Date().toISOString() })
+            .eq('id', activeConversationId);
+        if (updateError) throw updateError;
+        
+        const transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
+        
+        const analysisResult = await analyzeSession({ transcript });
+
+        const { error: analysisError } = await supabase
+            .from('conversation_analyses')
+            .insert({
+                conversation_id: activeConversationId,
+                user_id: user.id,
+                summary: analysisResult.emotionalSummary.summaryText,
+                mood: { dominantStates: analysisResult.emotionalSummary.dominantStates },
+                insights: analysisResult.insights,
+                suggestions: analysisResult.suggestedSteps,
+            });
+
+        if (analysisError) throw analysisError;
+
+        await awardBadge('self_reflector', 'Self-Reflector');
+        sessionStorage.setItem('sessionAnalysis', JSON.stringify(analysisResult));
+        
+        await fetchConversations(user.id);
+        setActiveConversationId(null);
+        setMessages([]);
+
+        router.push('/analysis');
+
+    } catch(err) {
+        console.error("Failed to end and analyze session:", err);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not finalize the session analysis.' });
+        await supabase.from('conversations').update({ status: 'active' }).eq('id', activeConversationId);
+    } finally {
+        setIsEndingSession(false);
+    }
   };
   
   const handleDeleteConversation = async (conversationId: string) => {
       if (!user) return;
-      // Delete messages first due to foreign key constraint
-      await supabase.from('messages').delete().eq('conversation_id', conversationId);
-      await supabase.from('conversations').delete().eq('id', conversationId);
       
-      toast({ title: "Conversation Deleted" });
-
-      if (activeConversationId === conversationId) {
-          setActiveConversationId(null);
-          setMessages([]);
+      const { error } = await supabase.from('conversations').delete().eq('id', conversationId);
+      
+      if (error) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete conversation.'});
+      } else {
+        toast({ title: "Conversation Deleted" });
+        await fetchConversations(user.id);
+        if (activeConversationId === conversationId) {
+            setActiveConversationId(null);
+            setMessages([]);
+        }
       }
-      await fetchConversations(user.id);
   }
 
   return (
@@ -282,7 +323,7 @@ export default function ChatPage() {
                                     <AlertDialogHeader>
                                     <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                        This will permanently delete this conversation and all of its messages.
+                                        This will permanently delete this conversation and all of its messages. This action cannot be undone.
                                     </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
@@ -295,7 +336,7 @@ export default function ChatPage() {
                     ))}
                 </nav>
             ) : (
-                <div className="p-4 text-center text-sm text-muted-foreground">No conversations yet.</div>
+                <div className="p-4 text-center text-sm text-muted-foreground">No active conversations.</div>
             )}
         </div>
         <div className="p-4 border-t text-xs text-muted-foreground">Mind Bloom v1.0</div>
@@ -312,13 +353,15 @@ export default function ChatPage() {
             </div>
           </div>
            <div className="flex items-center gap-2">
-            <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={toggleVoiceMode} disabled={isLoading}><Mic /></Button>
+            <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={() => setIsVoiceMode(!isVoiceMode)} disabled={isLoading}><Mic /></Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm" disabled={messages.length === 0}><PhoneOff className="mr-2"/> End & Analyze</Button>
+                <Button variant="destructive" size="sm" disabled={messages.length === 0 || !activeConversationId || isEndingSession}>
+                    {isEndingSession ? "Analyzing..." : <><PhoneOff className="mr-2"/> End & Analyze</>}
+                </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
-                <AlertDialogHeader><AlertDialogTitle>End your session?</AlertDialogTitle><AlertDialogDescription>This will end the current chat and take you to the analysis page.</AlertDialogDescription></AlertDialogHeader>
+                <AlertDialogHeader><AlertDialogTitle>End your session?</AlertDialogTitle><AlertDialogDescription>This will end the current chat, save the analysis, and start a new chat session.</AlertDialogDescription></AlertDialogHeader>
                 <AlertDialogFooter><AlertDialogCancel>Continue Chat</AlertDialogCancel><AlertDialogAction onClick={handleEndSession}>End & Analyze</AlertDialogAction></AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -329,7 +372,7 @@ export default function ChatPage() {
            {!activeConversationId && messages.length === 0 && !isLoading && (
              <div className="text-center text-muted-foreground mt-8 h-full flex flex-col justify-center items-center">
                 <MessageSquare className="mx-auto h-12 w-12" />
-                <p className="mt-2">Start a new conversation by typing below.</p>
+                <p className="mt-2">Start a new conversation or select one from the list.</p>
              </div>
            )}
           {messages.map((msg, index) => (
@@ -337,7 +380,7 @@ export default function ChatPage() {
               {msg.role === 'assistant' && <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>}
               <div className={`max-w-xs rounded-lg px-4 py-2 sm:max-w-md lg:max-w-lg ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                 <p className="whitespace-pre-wrap">{msg.content}</p>
-                {msg.audioUrl && <Button variant="ghost" size="icon" className="h-7 w-7 mt-1" onClick={() => new Audio(msg.audioUrl!).play()}><Volume2 className="h-4 w-4" /></Button>}
+                {msg.audioUrl && <Button variant="ghost" size="icon" className="h-7 w-7 mt-1" onClick={() => new Audio(msg.audioUrl!).play()}><User className="h-4 w-4" /></Button>}
               </div>
               {msg.role === 'user' && <Avatar className="h-8 w-8"><AvatarFallback><User /></AvatarFallback></Avatar>}
             </div>
@@ -363,15 +406,13 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()}
-              disabled={isLoading}
+              disabled={isLoading || isEndingSession}
               className="flex-1"
             />
-            <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading}><Send /></Button>
+            <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession}><Send /></Button>
           </div>
         </footer>
       </div>
     </div>
   );
 }
-
-    

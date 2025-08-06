@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Lightbulb, BarChart3, ClipboardCheck, ArrowRight, MessageSquareQuote, Bot, Trophy, Plus, ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
-import { analyzeSession, AnalyzeSessionOutput, AnalyzeSessionInput } from '@/ai/flows/session-analysis';
+import type { AnalyzeSessionOutput } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
@@ -23,125 +23,33 @@ export default function AnalysisPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
-  const [isGuest, setIsGuest] = useState(false);
-  const [hasAwardedBadge, setHasAwardedBadge] = useState(false);
-
 
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (!currentUser) {
-        const guestSession = sessionStorage.getItem('isGuest') === 'true';
-        setIsGuest(guestSession);
-        if (!guestSession) {
-          router.push('/chat');
-        }
-      }
+      setUser(session?.user ?? null);
     });
 
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, [router]);
+  }, []);
 
   useEffect(() => {
-    // Wait until user status is determined.
-    if (user === undefined) {
-      return;
+    try {
+      const analysisData = sessionStorage.getItem('sessionAnalysis');
+      if (analysisData) {
+        setAnalysis(JSON.parse(analysisData));
+        sessionStorage.removeItem('sessionAnalysis');
+      } else {
+        setError('No session analysis found. Please complete a chat session first.');
+      }
+    } catch (e) {
+      console.error("Could not parse session analysis", e);
+      setError('There was an issue reading your session analysis.');
+    } finally {
+      setIsLoading(false);
     }
-
-    const awardBadge = async (code: string, name: string) => {
-        if (!user) return;
-
-        const { data: existingBadge } = await supabase
-            .from('user_badges')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('badge_code', code)
-            .single();
-        
-        if (!existingBadge) {
-            const { error } = await supabase
-                .from('user_badges')
-                .insert({ user_id: user.id, badge_code: code });
-
-            if (!error) {
-                setHasAwardedBadge(true);
-                toast({
-                    title: 'Badge Unlocked!',
-                    description: `You've earned the "${name}" badge!`,
-                    action: <Trophy className="h-5 w-5 text-yellow-500" />
-                });
-            }
-        }
-    }
-
-    const processSession = async () => {
-      let transcript = '';
-      let onboardingData: AnalyzeSessionInput['onboardingData'] = {};
-      
-      const sessionData = sessionStorage.getItem('sessionData');
-      if (sessionData) {
-          try {
-            const parsedData = JSON.parse(sessionData);
-            const messages = parsedData.messages || [];
-            transcript = messages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
-          } catch(e) {
-            console.error("Could not parse sessionData", e);
-            setError('There was an issue reading your session data.');
-            setIsLoading(false);
-            return;
-          }
-      }
-
-      if (!transcript) {
-        setError('No session transcript found. Please start a new chat session.');
-        setIsLoading(false);
-        return;
-      }
-      
-      if (user) {
-          const { data, error } = await supabase
-              .from('profiles')
-              .select('mood_baseline, support_tags, therapy_tone')
-              .eq('id', user.id)
-              .single();
-          if (!error && data) {
-              onboardingData = {
-                  moodBaseline: data.mood_baseline,
-                  supportTags: data.support_tags,
-                  therapyTone: data.therapy_tone,
-              };
-          }
-      }
-
-      try {
-        const result = await analyzeSession({ transcript, onboardingData });
-        setAnalysis(result);
-
-        if (user) {
-            await awardBadge('self_reflector', 'Self-Reflector');
-        }
-
-      } catch (err) {
-        console.error(err);
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-        setError(`Failed to analyze the session: ${errorMessage}`);
-        toast({
-          variant: 'destructive',
-          title: 'Analysis Failed',
-          description: 'The AI could not process this conversation. Please try a new chat.',
-        });
-      } finally {
-        setIsLoading(false);
-        sessionStorage.removeItem('sessionData');
-      }
-    };
-
-    processSession();
-  }, [user, isGuest, router, toast]);
-
+  }, []);
 
   const handleAddTask = async (title: string) => {
     if (!user) {
@@ -185,7 +93,7 @@ export default function AnalysisPage() {
         <header className="mb-8">
           <h1 className="font-headline text-3xl font-bold text-foreground">Session Analysis</h1>
           <p className="text-muted-foreground">
-            {isLoading ? 'Analyzing your session...' : "Here's a gentle reflection on our chat."}
+            {isLoading ? 'Loading your analysis...' : "Here's a gentle reflection on our chat."}
           </p>
         </header>
 
@@ -279,7 +187,7 @@ export default function AnalysisPage() {
                 <CardContent className="space-y-2">
                     <p className="text-muted-foreground mb-3">You're doing great. Let's keep the momentum going.</p>
                     <Link href="/chat">
-                      <Button variant="outline" className="w-full">Continue Therapy</Button>
+                      <Button variant="outline" className="w-full">Start a New Chat</Button>
                     </Link>
                     <Link href="/dashboard">
                         <Button className="w-full mt-2">
@@ -288,14 +196,6 @@ export default function AnalysisPage() {
                     </Link>
                 </CardContent>
              </Card>
-
-             {hasAwardedBadge && (
-                <div className="flex justify-center">
-                    <Badge variant="outline" className="p-2 px-4 text-sm animate-in fade-in duration-500">
-                        <Trophy className="h-4 w-4 mr-2 text-yellow-500"/> You've unlocked the "Self-Reflector" badge!
-                    </Badge>
-                </div>
-             )}
           </div>
         </div>
       </div>
