@@ -14,7 +14,7 @@ import {z, runFlow} from 'genkit';
 
 
 // Re-using the same input schema from the non-streaming version
-import {TherapistChatInput, TherapistChatInputSchema} from './therapist-chat';
+import {TherapistChatInput, TherapistChatInputSchema} from './chat.types';
 
 // The streaming flow will output chunks of text content.
 const TherapistChatStreamOutputSchema = z.string();
