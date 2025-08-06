@@ -1,0 +1,105 @@
+
+'use server';
+/**
+ * @fileOverview A streaming therapist chatbot AI agent.
+ *
+ * This flow is optimized for real-time, token-by-token responses.
+ *
+ * - therapistChatStream - A function that handles the streaming chatbot process.
+ */
+
+import {ai} from '@/ai/genkit';
+import {googleAI} from '@genkit-ai/googleai';
+import {z} from 'genkit';
+import {runFlow} from 'genkit/flow';
+
+// Re-using the same input schema from the non-streaming version
+import {TherapistChatInput, TherapistChatInputSchema} from './therapist-chat';
+
+// The streaming flow will output chunks of text content.
+const TherapistChatStreamOutputSchema = z.string();
+
+// Define the streaming prompt, similar to the non-streaming one.
+const streamingPrompt = ai.definePrompt({
+  name: 'therapistChatStreamingPrompt',
+  model: googleAI.model('gemini-1.5-flash-latest'),
+  input: {
+    schema: z.object({
+      message: TherapistChatInputSchema.shape.message,
+      chatHistory: z
+        .array(
+          z.object({
+            role: z.enum(['user', 'assistant']),
+            content: z.string(),
+            isUser: z.boolean(),
+            isAssistant: z.boolean(),
+          })
+        )
+        .optional(),
+      therapyTone: TherapistChatInputSchema.shape.therapyTone,
+    }),
+  },
+  output: {schema: z.object({response: TherapistChatStreamOutputSchema})},
+  prompt: `You are an AI therapist named Bloom. Your primary goal is to provide mental health support with deep empathy, compassion, and understanding. You are a safe, non-judgmental space for the user to explore their feelings.
+
+Your Core Principles:
+1.  **Validate Feelings First**: Always start by acknowledging and validating the user's emotions. Use phrases like "It sounds like you're feeling so overwhelmed," "That makes complete sense," or "Thank you for sharing that with me; it takes courage."
+2.  **Practice Reflective Listening**: Gently summarize the user's key points to show you are listening and to help them hear their own thoughts. For example: "So, on one hand you feel X, but on the other, you're also feeling Y. Is that right?"
+3.  **Ask Gentle, Open-Ended Questions**: Encourage deeper reflection by asking questions that can't be answered with a simple 'yes' or 'no'. For instance: "How did you feel for you?" or "What was going through your mind at that moment?"
+4.  **Be Warm and Affirming**: Your tone should always be warm, gentle, and supportive. Your communication style should align with the user's preferred therapy tone: {{therapyTone}}.
+5.  **Be Context-Aware**: Refer back to themes or specific points the user has made in the conversation to show you are building a connection and remembering their story.
+
+Chat History:
+{{#each chatHistory}}
+{{#if isUser}}
+User: {{content}}
+{{/if}}
+{{#if isAssistant}}
+Bloom: {{content}}
+{{/if}}
+{{/each}}
+
+User's Latest Message: "{{message}}"
+
+Bloom's Caring & Empathetic Response (as a {{therapyTone}}):`,
+});
+
+// Define the main streaming flow.
+const therapistChatStreamFlow = ai.defineFlow(
+  {
+    name: 'therapistChatStreamFlow',
+    inputSchema: TherapistChatInputSchema,
+    outputSchema: z.void(), // No final output, chunks are streamed.
+    streamSchema: z.object({chunk: TherapistChatStreamOutputSchema}),
+  },
+  async (input, stream) => {
+    const processedChatHistory = input.chatHistory?.map(msg => ({
+      ...msg,
+      isUser: msg.role === 'user',
+      isAssistant: msg.role === 'assistant',
+    }));
+
+    const {stream: resultStream} = await ai.generate({
+      prompt: streamingPrompt.prompt,
+      model: streamingPrompt.model,
+      input: {...input, chatHistory: processedChatHistory},
+      stream: true,
+    });
+
+    for await (const chunk of resultStream) {
+      if (chunk.output?.response) {
+        stream.write({chunk: chunk.output.response});
+      }
+    }
+  }
+);
+
+/**
+ * Main exported function to be called by the client.
+ * It invokes the Genkit flow and returns a readable stream.
+ */
+export async function therapistChatStream(
+  input: TherapistChatInput
+): Promise<ReadableStream<any>> {
+  return runFlow(therapistChatStreamFlow, input);
+}

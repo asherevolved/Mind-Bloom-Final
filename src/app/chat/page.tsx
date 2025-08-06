@@ -3,12 +3,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { MainAppLayout } from '@/components/main-app-layout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Bot, Mic, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { therapistChat } from '@/ai/flows/therapist-chat';
 import { analyzeSession } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -27,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
+import { therapistChatStream } from '@/ai/flows/therapist-chat-stream';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -124,6 +123,7 @@ export default function ChatPage() {
         setTherapyTone(data?.therapy_tone || 'Reflective Listener');
         await fetchConversations(currentUser.id);
       } else {
+        // If no user, redirect to login. This page is not for guests.
         router.push('/');
       }
     });
@@ -150,10 +150,11 @@ export default function ChatPage() {
   };
   
   const createNewConversation = async (firstMessage: string): Promise<string | null> => {
+      if (!user) return null;
       const title = firstMessage.substring(0, 40) + (firstMessage.length > 40 ? '...' : '');
       const { data, error } = await supabase
         .from('conversations')
-        .insert({ title }) // user_id is now handled by the database default
+        .insert({ title, user_id: user.id })
         .select('id')
         .single();
       
@@ -163,66 +164,98 @@ export default function ChatPage() {
         return null;
       }
       
-      if(user) await fetchConversations(user.id);
+      await fetchConversations(user.id);
       return data.id;
   };
 
   const handleSend = async () => {
     if (!input.trim() || !user || isEndingSession) return;
 
-    if (messages.length === 0) {
-        await awardBadge('therapy_starter', 'Therapy Starter');
-    }
-
-    const newUserMessage: Message = { role: 'user', content: input };
-    setMessages(prev => [...prev, newUserMessage]);
     const currentInput = input;
     setInput('');
+
+    // Optimistically add user message to UI
+    const newUserMessage: Message = { role: 'user', content: currentInput };
+    setMessages(prev => [...prev, newUserMessage]);
     setIsLoading(true);
 
     let currentConversationId = activeConversationId;
     
+    // Create new conversation if needed, and save user message in parallel.
+    if (!currentConversationId) {
+        const newId = await createNewConversation(currentInput);
+        if (!newId) {
+             setIsLoading(false);
+             setMessages(prev => prev.slice(0, -1)); // Clear optimistic message
+             setInput(currentInput); // Restore input
+             return;
+        };
+        currentConversationId = newId;
+        setActiveConversationId(newId);
+    }
+    
+    // Save user message in the background. Don't block the AI call.
+    supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput }).then(({error}) => {
+        if(error) console.error("Error saving user message:", error);
+    });
+    
+    // Add an empty assistant message to start streaming into.
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
     try {
-        if (!currentConversationId) {
-            const newId = await createNewConversation(currentInput);
-            if (!newId) {
-                 setIsLoading(false);
-                 setMessages(prev => prev.slice(0, -1)); // Clear the optimistic user message
-                 setInput(currentInput);
-                 return;
-            };
-            currentConversationId = newId;
-            setActiveConversationId(newId);
-        }
-        
-        if(!currentConversationId) {
-            throw new Error("Conversation ID is missing after creation attempt.");
+        if (messages.length === 0) {
+            await awardBadge('therapy_starter', 'Therapy Starter');
         }
 
-        await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput });
-        
         const chatHistoryForAI = [...messages, newUserMessage].slice(-10).map(m => ({ role: m.role, content: m.content }));
-        const response = await therapistChat({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
         
-        await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'assistant', content: response.response });
+        const stream = await therapistChatStream({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
+        const reader = stream.getReader();
+        const decoder = new TextDecoder();
+        let finalResponse = '';
 
-        let audioUrl: string | undefined = undefined;
-        if (isVoiceMode) {
-            const audioResponse = await textToSpeech({ text: response.response });
-            audioUrl = audioResponse;
-            awardBadge('conversationalist', 'Conversationalist');
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            
+            const chunk = JSON.parse(decoder.decode(value)).chunk;
+            finalResponse += chunk;
+
+            setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                if (lastMessage && lastMessage.role === 'assistant') {
+                    lastMessage.content += chunk;
+                }
+                return newMessages;
+            });
+        }
+        
+        // After streaming is complete, save the final assistant message
+        if (currentConversationId) {
+            await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'assistant', content: finalResponse });
         }
 
-        const aiMessage: Message = { role: 'assistant', content: response.response, audioUrl };
-        setMessages(prev => [...prev, aiMessage]);
-
-        if (audioUrl) {
+        if (isVoiceMode) {
+            const audioResponse = await textToSpeech({ text: finalResponse });
+            const audioUrl = audioResponse;
+            setMessages(prev => {
+                const newMessages = [...prev];
+                const lastMessage = newMessages[newMessages.length - 1];
+                if (lastMessage && lastMessage.role === 'assistant') {
+                    lastMessage.audioUrl = audioUrl;
+                }
+                return newMessages;
+            });
             new Audio(audioUrl).play();
+            awardBadge('conversationalist', 'Conversationalist');
         }
 
     } catch (error: any) {
       console.error(error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI. Please try again.' });
+      setMessages(prev => prev.slice(0, -2)); // Remove user message and empty assistant message
+      setInput(currentInput);
     } finally {
       setIsLoading(false);
     }
@@ -282,13 +315,16 @@ export default function ChatPage() {
   const handleDeleteConversation = async (conversationId: string) => {
       if (!user) return;
       
+      // Cascade delete is setup in Supabase, so this deletes messages too.
       const { error } = await supabase.from('conversations').delete().eq('id', conversationId);
       
       if (error) {
         toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete conversation.'});
       } else {
         toast({ title: "Conversation Deleted" });
+        // Refetch conversations to update the sidebar
         await fetchConversations(user.id);
+        // If the deleted one was active, reset the chat view
         if (activeConversationId === conversationId) {
             setActiveConversationId(null);
             setMessages([]);
@@ -297,10 +333,13 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-background">
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 border-r bg-background flex flex-col">
           <div className="p-4 border-b">
+              <Link href="/dashboard" className="mb-4 block">
+                <Button variant="outline" className="w-full">Back to Dashboard</Button>
+              </Link>
               <Button className="w-full" onClick={handleNewChat}><Plus className="mr-2"/> New Chat</Button>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -312,15 +351,15 @@ export default function ChatPage() {
                   <nav className="p-2">
                       {conversations.map(convo => (
                           <div key={convo.id} className="relative group">
-                              <Link href="#"
-                                  onClick={(e) => { e.preventDefault(); setActiveConversationId(convo.id);}}
+                              <button
+                                  onClick={() => setActiveConversationId(convo.id)}
                                   className={cn(
                                       "block w-full text-left truncate p-2 rounded-md text-sm transition-colors",
                                       activeConversationId === convo.id ? "bg-primary/20 text-primary-foreground" : "hover:bg-muted"
                                   )}
                               >
                                   {convo.title || "New Conversation"}
-                              </Link>
+                              </button>
                               <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                       <Button variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 opacity-0 group-hover:opacity-100">
@@ -393,7 +432,7 @@ export default function ChatPage() {
               {msg.role === 'user' && <Avatar className="h-8 w-8"><AvatarFallback><User /></AvatarFallback></Avatar>}
               </div>
           ))}
-          {isLoading && (
+          {isLoading && messages[messages.length -1]?.role === 'assistant' && messages[messages.length -1]?.content === '' && (
               <div className="flex items-end gap-2 justify-start">
               <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>
               <div className="rounded-lg px-4 py-2 bg-muted flex items-center gap-1">
@@ -424,5 +463,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
-    
