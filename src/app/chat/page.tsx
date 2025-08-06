@@ -182,7 +182,7 @@ export default function ChatPage() {
 
     let currentConversationId = activeConversationId;
     
-    // Create new conversation if needed, and save user message in parallel.
+    // Create new conversation if needed
     if (!currentConversationId) {
         const newId = await createNewConversation(currentInput);
         if (!newId) {
@@ -196,8 +196,12 @@ export default function ChatPage() {
     }
     
     // Save user message in the background. Don't block the AI call.
-    supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput }).then(({error}) => {
+    supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput }).then(({data, error}) => {
         if(error) console.error("Error saving user message:", error);
+        else {
+            // Update the optimistic message with the real ID from the DB
+            setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: data?.[0]?.id} : msg));
+        }
     });
     
     // Add an empty assistant message to start streaming into.
@@ -333,6 +337,23 @@ export default function ChatPage() {
       }
   }
 
+  const handleDeleteMessage = async (messageId?: string) => {
+    if (!messageId) return;
+
+    // Optimistically remove from UI
+    setMessages(prev => prev.filter(m => m.id !== messageId));
+
+    const { error } = await supabase.from('messages').delete().eq('id', messageId);
+
+    if (error) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete message. Please refresh.' });
+        // Re-fetch messages to restore state if delete failed
+        if (activeConversationId) {
+            fetchMessages(activeConversationId);
+        }
+    }
+  };
+
   return (
     <MainAppLayout>
       <div className="flex-1 grid grid-cols-[auto_1fr] h-[calc(100vh_-_var(--header-height))]">
@@ -422,12 +443,20 @@ export default function ChatPage() {
                 </div>
             )}
             {messages.map((msg, index) => (
-                <div key={msg.id || index} className={`flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div key={msg.id || index} className={`group flex items-end gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {msg.role === 'assistant' && <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>}
+                
+                {msg.role === 'user' && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" onClick={() => handleDeleteMessage(msg.id)}>
+                        <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                )}
+                
                 <div className={`max-w-xs rounded-lg px-4 py-2 sm:max-w-md lg:max-w-lg ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                     {msg.audioUrl && <Button variant="ghost" size="icon" className="h-7 w-7 mt-1" onClick={() => new Audio(msg.audioUrl!).play()}><User className="h-4 w-4" /></Button>}
                 </div>
+
                 {msg.role === 'user' && <Avatar className="h-8 w-8"><AvatarFallback><User /></AvatarFallback></Avatar>}
                 </div>
             ))}
