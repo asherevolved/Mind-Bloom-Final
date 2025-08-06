@@ -10,8 +10,8 @@
 
 import {ai} from '@/ai/genkit';
 import {googleAI} from '@genkit-ai/googleai';
-import {z} from 'genkit';
-import {runFlow} from 'genkit/flow';
+import {z, runFlow} from 'genkit';
+
 
 // Re-using the same input schema from the non-streaming version
 import {TherapistChatInput, TherapistChatInputSchema} from './therapist-chat';
