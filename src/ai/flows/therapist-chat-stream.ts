@@ -10,7 +10,8 @@
 
 import {ai} from '@/ai/genkit';
 import {googleAI} from '@genkit-ai/googleai';
-import {z, runFlow} from 'genkit';
+import {z} from 'genkit';
+import {runFlow} from 'genkit/flow';
 
 
 // Re-using the same input schema from the non-streaming version
@@ -96,12 +97,7 @@ const therapistChatStreamFlow = ai.defineFlow(
   }
 );
 
-/**
- * Main exported function to be called by the client.
- * It invokes the Genkit flow and returns a readable stream.
- */
-export async function therapistChatStream(
-  input: TherapistChatInput
-): Promise<ReadableStream<any>> {
-  return runFlow(therapistChatStreamFlow, input);
+
+export async function therapistChatStream(input: TherapistChatInput) {
+    return runFlow(therapistChatStreamFlow, input);
 }

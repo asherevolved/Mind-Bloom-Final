@@ -215,22 +215,17 @@ export default function ChatPage() {
         const chatHistoryForAI = [...messages, newUserMessage].slice(-10).map(m => ({ role: m.role, content: m.content }));
         
         const stream = await therapistChatStream({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
-        const reader = stream.getReader();
-        const decoder = new TextDecoder();
+        
         let finalResponse = '';
 
-        while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            
-            const chunk = JSON.parse(decoder.decode(value)).chunk;
-            finalResponse += chunk;
+        for await (const chunk of stream) {
+            finalResponse += chunk.chunk;
 
             setMessages(prev => {
                 const newMessages = [...prev];
                 const lastMessage = newMessages[newMessages.length - 1];
                 if (lastMessage && lastMessage.role === 'assistant') {
-                    lastMessage.content += chunk;
+                    lastMessage.content = finalResponse;
                 }
                 return newMessages;
             });
