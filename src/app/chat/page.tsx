@@ -150,14 +150,10 @@ export default function ChatPage() {
   };
   
   const createNewConversation = async (currentUserId: string, firstMessage: string): Promise<string | null> => {
-      if (!user) {
-          toast({ variant: 'destructive', title: 'Error', description: 'You must be logged in to start a chat.' });
-          return null;
-      }
       const title = firstMessage.substring(0, 40) + (firstMessage.length > 40 ? '...' : '');
       const { data, error } = await supabase
         .from('conversations')
-        .insert({ user_id: currentUserId, title })
+        .insert({ title }) // user_id is now handled by the database default
         .select('id')
         .single();
       
@@ -174,7 +170,9 @@ export default function ChatPage() {
   const handleSend = async () => {
     if (!input.trim() || !user || isEndingSession) return;
 
-    if (messages.length === 0) awardBadge('therapy_starter', 'Therapy Starter');
+    if (messages.length === 0) {
+        await awardBadge('therapy_starter', 'Therapy Starter');
+    }
 
     const newUserMessage: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, newUserMessage]);
