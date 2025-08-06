@@ -22,7 +22,6 @@ export type TherapistChatOutput = z.infer<typeof TherapistChatOutputSchema>;
 
 const prompt = ai.definePrompt({
   name: 'therapistChatPrompt',
-  model: googleAI.model('gemini-1.5-flash-latest'),
   input: {schema: z.object({
     message: TherapistChatInputSchema.shape.message,
     chatHistory: z.array(z.object({

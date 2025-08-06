@@ -11,8 +11,6 @@
 import {ai} from '@/ai/genkit';
 import {googleAI} from '@genkit-ai/googleai';
 import {z} from 'genkit';
-import { therapistChat } from './therapist-chat';
-
 
 // Re-using the same input schema from the non-streaming version
 import {TherapistChatInput, TherapistChatInputSchema} from './chat.types';
@@ -23,7 +21,6 @@ const TherapistChatStreamOutputSchema = z.string();
 // Define the streaming prompt, similar to the non-streaming one.
 const streamingPrompt = ai.definePrompt({
   name: 'therapistChatStreamingPrompt',
-  model: googleAI.model('gemini-1.5-flash-latest'),
   input: {
     schema: z.object({
       message: TherapistChatInputSchema.shape.message,
