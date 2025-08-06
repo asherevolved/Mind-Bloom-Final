@@ -80,13 +80,13 @@ export const therapistChatStreamFlow = ai.defineFlow(
       isAssistant: msg.role === 'assistant',
     }));
     
-    const prompt = await streamingPrompt.render({
+    const {prompt: renderedPrompt} = await streamingPrompt.render({
       ...input,
       chatHistory: processedChatHistory,
     });
     
     const {stream: resultStream, response} = await ai.generate({
-      prompt: prompt.prompt,
+      prompt: renderedPrompt,
       model: googleAI.model('gemini-1.5-flash-latest'),
       stream: true,
     });

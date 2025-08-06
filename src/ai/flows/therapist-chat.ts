@@ -71,13 +71,14 @@ const therapistChatFlow = ai.defineFlow(
         isAssistant: msg.role === 'assistant',
     }));
 
-    const {output} = await ai.generate({
-        prompt: prompt.prompt,
-        model: googleAI.model('gemini-1.5-flash-latest'),
-        input: {
+    const {prompt: renderedPrompt} = await prompt.render({
             ...input,
             chatHistory: processedChatHistory,
-        },
+        });
+
+    const {output} = await ai.generate({
+        prompt: renderedPrompt,
+        model: googleAI.model('gemini-1.5-flash-latest'),
     });
     return output!;
   }
