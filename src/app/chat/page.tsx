@@ -170,7 +170,12 @@ export default function ChatPage() {
   };
 
   const handleSend = async () => {
-    if (!input.trim() || !user || isEndingSession) return;
+    if (!input.trim() || !user || isEndingSession) {
+        if (!input.trim()) {
+            toast({variant: 'destructive', title: 'Empty Message', description: 'Please enter a message before sending.'});
+        }
+        return;
+    }
 
     const currentInput = input;
     setInput('');
