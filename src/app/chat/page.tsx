@@ -25,7 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { therapistChatStreamFlow } from '@/ai/flows/therapist-chat-stream';
+import { therapistChatStream } from '@/ai/flows/therapist-chat-stream';
 import { MainAppLayout } from '@/components/main-app-layout';
 
 type Message = {
@@ -186,6 +186,7 @@ export default function ChatPage() {
     setIsLoading(true);
 
     let currentConversationId = activeConversationId;
+    let savedUserMessageId: string | undefined = undefined;
     
     // Create new conversation if needed
     if (!currentConversationId) {
@@ -200,26 +201,33 @@ export default function ChatPage() {
         setActiveConversationId(newId);
     }
     
-    // Save user message in the background. Don't block the AI call.
-    supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput }).then(({data, error}) => {
-        if(error) console.error("Error saving user message:", error);
-        else if (data) {
-            // Update the optimistic message with the real ID from the DB
-            setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: data?.[0]?.id} : msg));
-        }
-    });
+    // Save user message and get its ID
+    const { data: savedMessageData, error: saveError } = await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput }).select('id').single();
+
+    if (saveError || !savedMessageData) {
+        console.error("Error saving user message:", saveError);
+        toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
+        setIsLoading(false);
+        setMessages(prev => prev.slice(0, -1)); // Clear optimistic message
+        setInput(currentInput); // Restore input
+        return;
+    } else {
+        savedUserMessageId = savedMessageData.id;
+        // Update the optimistic message with the real ID from the DB
+        setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: savedUserMessageId} : msg));
+    }
     
     // Add an empty assistant message to start streaming into.
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-        if (messages.length === 0) {
+        if (messages.length <= 1) {
             await awardBadge('therapy_starter', 'Therapy Starter');
         }
 
         const chatHistoryForAI = [...messages, newUserMessage].slice(-10).map(m => ({ role: m.role, content: m.content }));
         
-        const stream = await therapistChatStreamFlow({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
+        const stream = await therapistChatStream({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
         
         let finalResponse = '';
 
@@ -447,9 +455,25 @@ export default function ChatPage() {
                 {msg.role === 'assistant' && <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>}
                 
                 {msg.role === 'user' && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" onClick={() => handleDeleteMessage(msg.id)}>
-                        <Trash2 className="h-4 w-4 text-muted-foreground" />
-                    </Button>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
+                                <Trash2 className="h-4 w-4 text-muted-foreground" />
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Message?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                This will permanently delete this message. This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteMessage(msg.id)}>Delete</AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 )}
                 
                 <div className={`max-w-xs rounded-lg px-4 py-2 sm:max-w-md lg:max-w-lg ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
