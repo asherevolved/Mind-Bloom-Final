@@ -141,14 +141,21 @@ export default function ChatPage() {
     const newUserMessage: ChatMessage = { role: 'user', content: currentInput, id: `local-user-${Date.now()}` };
     setMessages(prev => [...prev, newUserMessage]);
     
-    // Add empty assistant message to prepare for streaming
     const assistantMessageId = `local-assistant-${Date.now()}`;
     setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
     
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("User is not authenticated.");
+      }
+
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           message: currentInput,
           conversationId: activeConversationId,
@@ -161,7 +168,6 @@ export default function ChatPage() {
         throw new Error(errorData.error || 'The AI failed to respond.');
       }
 
-      // Handle the streaming response
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
@@ -172,40 +178,36 @@ export default function ChatPage() {
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
-        const chunk = decoder.decode(value, { stream: true });
+        let chunk = decoder.decode(value, { stream: true });
         
-        // Check for metadata at the beginning of the stream
-        if (!newConversationId && chunk.startsWith('{"metadata":')) {
-            const endOfMetadata = chunk.indexOf('}\n');
-            if (endOfMetadata !== -1) {
-                const metadataStr = chunk.substring(0, endOfMetadata + 1);
-                try {
-                    const { metadata } = JSON.parse(metadataStr);
-                    newConversationId = metadata.conversationId;
-                    userMessageId = metadata.userMessageId;
-                    
-                    if (newConversationId && !activeConversationId) {
-                      setActiveConversationId(newConversationId);
-                      await awardBadge('therapy_starter', 'Therapy Starter');
-                    }
-                    
-                    // Update user message with DB ID
-                    setMessages(prev => prev.map(msg => 
-                      msg.id === newUserMessage.id ? {...msg, id: userMessageId || msg.id } : msg
-                    ));
+        try {
+          const metadataPrefix = '{"metadata":';
+          const endOfMetadata = '}\n\n';
+          if (!newConversationId && chunk.startsWith(metadataPrefix)) {
+            const endOfJson = chunk.indexOf(endOfMetadata);
+            if (endOfJson !== -1) {
+              const metadataStr = chunk.substring(0, endOfJson + 1);
+              const { metadata } = JSON.parse(metadataStr);
+              newConversationId = metadata.conversationId;
+              userMessageId = metadata.userMessageId;
+              
+              if (newConversationId && !activeConversationId) {
+                setActiveConversationId(newConversationId);
+                await awardBadge('therapy_starter', 'Therapy Starter');
+              }
+              
+              setMessages(prev => prev.map(msg => 
+                msg.id === newUserMessage.id ? {...msg, id: userMessageId || msg.id } : msg
+              ));
 
-                    // Remove metadata from chunk
-                    const remainingChunk = chunk.substring(endOfMetadata + 2);
-                    finalResponse += remainingChunk;
-                } catch(e) {
-                   finalResponse += chunk; // Not metadata, just content
-                }
-            } else {
-                 finalResponse += chunk; // Not a complete metadata object yet
+              chunk = chunk.substring(endOfJson + endOfMetadata.length);
             }
-        } else {
-            finalResponse += chunk;
+          }
+        } catch (e) {
+            console.error("Error parsing metadata chunk:", e);
         }
+
+        finalResponse += chunk;
 
         setMessages(prev => {
             const newMessages = [...prev];
@@ -216,10 +218,13 @@ export default function ChatPage() {
             return newMessages;
         });
       }
-
-      // Save the final assistant message
-      if(newConversationId) {
-         await supabase.from('messages').insert({ conversation_id: newConversationId, role: 'assistant', content: finalResponse });
+      
+      const convoIdToSave = newConversationId || activeConversationId;
+      if (convoIdToSave) {
+         await supabase.from('messages').insert({ conversation_id: convoIdToSave, role: 'assistant', content: finalResponse });
+         if (newConversationId) {
+            await fetchConversations(user.id);
+         }
       }
 
     } catch (error: any) {
@@ -227,7 +232,6 @@ export default function ChatPage() {
         toast({ title: 'Stream Canceled' });
       } else {
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI.' });
-        // Rollback UI
         setMessages(prev => prev.filter(m => m.id !== newUserMessage.id && m.id !== assistantMessageId));
         setInput(currentInput);
       }
