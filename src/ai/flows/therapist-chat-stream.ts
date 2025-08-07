@@ -22,7 +22,7 @@ export type TherapistChatStreamOutput = z.infer<typeof z.string>;
 const streamingPrompt = ai.definePrompt(
   {
     name: 'therapistChatStreamingPrompt',
-    model: 'groq/llama3-70b-8192',
+    model: 'gemini-1.5-flash-latest',
     input: {
       schema: z.object({
         ...TherapistChatInputSchema.shape,

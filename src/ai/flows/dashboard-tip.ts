@@ -25,7 +25,7 @@ export type GetAiTipOutput = z.infer<typeof GetAiTipOutputSchema>;
 
 const prompt = ai.definePrompt({
   name: 'dashboardTipPrompt',
-  model: 'groq/llama3-70b-8192',
+  model: 'gemini-1.5-flash-latest',
   input: {schema: GetAiTipInputSchema},
   output: {schema: GetAiTipOutputSchema},
   prompt: `You are a helpful and gentle wellness assistant. Your task is to provide a single, actionable wellness tip for the user's dashboard.

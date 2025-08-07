@@ -40,7 +40,7 @@ export async function analyzeSession(input: AnalyzeSessionInput): Promise<Analyz
 
 const analyzeSessionPrompt = ai.definePrompt({
   name: 'analyzeSessionPrompt',
-  model: 'groq/llama3-70b-8192',
+  model: 'gemini-1.5-flash-latest',
   input: {schema: AnalyzeSessionInputSchema},
   output: {schema: AnalyzeSessionOutputSchema},
   prompt: `You are an AI therapy session analyzer. Your tone is gentle, empathetic, and affirming. You are analyzing a recent therapy chat session to provide a soft, supportive summary.

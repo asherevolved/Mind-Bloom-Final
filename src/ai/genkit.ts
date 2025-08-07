@@ -1,11 +1,7 @@
 import {genkit, Plugin} from 'genkit';
-import {groq} from 'genkitx-groq';
+import {googleAI} from '@genkit-ai/googleai';
 
-const plugins: Plugin[] = [];
-
-if (process.env.GROQ_API_KEY) {
-  plugins.push(groq({apiKey: process.env.GROQ_API_KEY}));
-}
+const plugins: Plugin[] = [googleAI()];
 
 export const ai = genkit({
   plugins,
