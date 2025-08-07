@@ -95,4 +95,12 @@ export async function therapistChatStream(
   const stream = await therapistChatStreamFlow(input);
 
   async function* transformStream(): AsyncGenerator<string> {
-    for await (const chunk of stream)
+    for await (const chunk of stream) {
+      if (chunk.chunk) {
+        yield chunk.chunk;
+      }
+    }
+  }
+
+  return transformStream();
+}
