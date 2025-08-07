@@ -1,30 +1,40 @@
 'use server';
-
 /**
- * @fileOverview A therapist chatbot AI agent.
+ * @fileOverview A non-streaming AI chatbot flow for Mind Bloom.
  *
- * - therapistChat - A function that handles the chatbot process.
- * - TherapistChatInput - The input type for the therapistChat function.
- * - TherapistChatOutput - The return type for the therapistChat function.
+ * - therapistChat - A function that returns a complete AI response.
+ * - TherapistChatInput - The input type for the therapistChat function (re-exported).
  */
 
 import {ai} from '@/ai/genkit';
-import {z}from 'genkit';
-import {googleAI} from '@genkit-ai/googleai';
-import { TherapistChatInput, TherapistChatInputSchema } from './chat.types';
+import {groq} from 'genkitx-groq';
+import {z} from 'genkit';
+import {
+  TherapistChatInput,
+  TherapistChatInputSchema,
+} from './chat.types';
 
-const TherapistChatOutputSchema = z.object({
-  response: z.string().describe('The response from the AI therapist.'),
-});
-export type TherapistChatOutput = z.infer<typeof TherapistChatOutputSchema>;
+export {TherapistChatInput};
+export type TherapistChatOutput = z.infer<typeof z.string>;
 
 
-const prompt = ai.definePrompt({
-  name: 'therapistChatPrompt',
-  model: googleAI.model('gemini-1.5-flash-latest'),
-  input: {schema: TherapistChatInputSchema},
-  output: {schema: TherapistChatOutputSchema},
-  prompt: `You are an AI therapist named Bloom. Your primary goal is to provide mental health support with deep empathy, compassion, and understanding. You are a safe, non-judgmental space for the user to explore their feelings.
+// Define the prompt for the therapist chatbot
+const prompt = ai.definePrompt(
+  {
+    name: 'therapistChatPrompt',
+    model: groq('llama3-70b-8192'),
+    input: {
+      schema: z.object({
+        ...TherapistChatInputSchema.shape,
+        // Add processed chat history for safe template rendering
+        processedChatHistory: z.array(z.object({
+            isUser: z.boolean(),
+            isAssistant: z.boolean(),
+            content: z.string()
+        })).optional()
+      }),
+    },
+    prompt: `You are an AI therapist named Bloom. Your primary goal is to provide mental health support with deep empathy, compassion, and understanding. You are a safe, non-judgmental space for the user to explore their feelings.
 
 Your Core Principles:
 1.  **Validate Feelings First**: Always start by acknowledging and validating the user's emotions. Use phrases like "It sounds like you're feeling so overwhelmed," "That makes complete sense," or "Thank you for sharing that with me; it takes courage."
@@ -34,7 +44,7 @@ Your Core Principles:
 5.  **Be Context-Aware**: Refer back to themes or specific points the user has made in the conversation to show you are building a connection and remembering their story.
 
 Chat History:
-{{#each chatHistory}}
+{{#each processedChatHistory}}
 {{#if isUser}}
 User: {{content}}
 {{else}}
@@ -45,25 +55,37 @@ Bloom: {{content}}
 User's Latest Message: "{{message}}"
 
 Bloom's Caring & Empathetic Response (as a {{therapyTone}}):`,
-});
+  },
+);
 
+// Define the main flow for non-streaming chat
 const therapistChatFlow = ai.defineFlow(
   {
     name: 'therapistChatFlow',
     inputSchema: TherapistChatInputSchema,
-    outputSchema: TherapistChatOutputSchema,
+    outputSchema: z.string(),
   },
-  async input => {
-    const processedChatHistory = (input.chatHistory || []).map(m => ({
-        ...m,
-        isUser: m.role === 'user',
+  async (input) => {
+    // Process chat history to create a safe structure for the Handlebars template
+    const processedChatHistory = input.chatHistory?.map((m) => ({
+      ...m,
+      isUser: m.role === 'user',
+      isAssistant: m.role === 'assistant',
     }));
 
-    const {output} = await prompt({...input, chatHistory: processedChatHistory});
+    const {output} = await prompt({...input, processedChatHistory});
     return output!;
   }
 );
 
-export async function therapistChat(input: TherapistChatInput): Promise<TherapistChatOutput> {
-  return therapistChatFlow(input);
+/**
+ * Provides a complete, non-streaming response from an AI therapist.
+ *
+ * @param {TherapistChatInput} input The user's message, chat history, and therapy tone.
+ * @returns {Promise<TherapistChatOutput>} A promise that resolves to the AI's complete response.
+ */
+export async function therapistChat(
+  input: TherapistChatInput
+): Promise<TherapistChatOutput> {
+  return await therapistChatFlow(input);
 }
