@@ -22,7 +22,7 @@ export type TherapistChatOutput = z.infer<typeof TherapistChatOutputSchema>;
 
 const prompt = ai.definePrompt({
   name: 'therapistChatPrompt',
-  model: googleAI.model('gemini-1.5-flash-latest'),
+  model: googleAI.model('gemini-1.5-pro-latest'),
   input: {schema: TherapistChatInputSchema},
   output: {schema: TherapistChatOutputSchema},
   prompt: `You are an AI therapist named Bloom. Your primary goal is to provide mental health support with deep empathy, compassion, and understanding. You are a safe, non-judgmental space for the user to explore their feelings.
@@ -63,6 +63,7 @@ const therapistChatFlow = ai.defineFlow(
       isAssistant: msg.role === 'assistant',
     })) || [];
 
+    // Call the prompt object directly. It handles the model call.
     const {output} = await prompt({
         ...input,
         chatHistory: processedChatHistory,

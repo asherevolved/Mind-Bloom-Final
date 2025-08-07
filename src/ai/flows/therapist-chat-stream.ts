@@ -21,7 +21,7 @@ const TherapistChatStreamOutputSchema = z.string();
 // Define the streaming prompt, similar to the non-streaming one.
 const streamingPrompt = ai.definePrompt({
   name: 'therapistChatStreamingPrompt',
-  model: googleAI.model('gemini-1.5-flash-latest'),
+  model: googleAI.model('gemini-1.5-pro-latest'),
   input: {schema: TherapistChatInputSchema},
   output: {schema: z.object({response: TherapistChatStreamOutputSchema})},
   prompt: `You are an AI therapist named Bloom. Your primary goal is to provide mental health support with deep empathy, compassion, and understanding. You are a safe, non-judgmental space for the user to explore their feelings.
@@ -64,14 +64,10 @@ export const therapistChatStreamFlow = ai.defineFlow(
       isAssistant: msg.role === 'assistant',
     })) || [];
 
-    // Call ai.generate with the fully rendered prompt
-    const {stream: resultStream, response} = await ai.generate({
-      prompt: (await streamingPrompt.render({
-        ...input,
-        chatHistory: processedChatHistory,
-      })).prompt,
-      model: googleAI.model('gemini-1.5-flash-latest'),
-      stream: true,
+    // Call the prompt object directly, which handles the AI generation.
+    const {stream: resultStream, response} = await streamingPrompt({
+      ...input,
+      chatHistory: processedChatHistory,
     });
 
     // Stream the results back to the client
