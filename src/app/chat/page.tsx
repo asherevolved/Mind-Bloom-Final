@@ -20,7 +20,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { textToSpeech } from '@/ai/flows/text-to-speech';
 import { supabase } from '@/lib/supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
@@ -34,7 +33,6 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [input, setInput] = useState('');
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
@@ -230,20 +228,6 @@ export default function ChatPage() {
         
         await supabase.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: finalResponse });
 
-        if (isVoiceMode) {
-            const audioResponse = await textToSpeech({ text: finalResponse });
-            const audioUrl = audioResponse;
-            setMessages(prev => {
-                const newMessages = [...prev];
-                const lastMessage = newMessages[newMessages.length - 1];
-                if (lastMessage && lastMessage.role === 'assistant') {
-                    lastMessage.audioUrl = audioUrl;
-                }
-                return newMessages;
-            });
-            new Audio(audioUrl).play();
-            awardBadge('conversationalist', 'Conversationalist');
-        }
 
     } catch (error: any) {
       console.error(error);
@@ -409,7 +393,6 @@ export default function ChatPage() {
                 </div>
             </div>
             <div className="flex items-center gap-2">
-                <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={() => setIsVoiceMode(!isVoiceMode)}><Mic /></Button>
                 <AlertDialog>
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive" size="sm" disabled={messages.length === 0 || !activeConversationId || isEndingSession}>
