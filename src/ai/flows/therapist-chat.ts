@@ -8,7 +8,6 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {googleAI} from '@genkit-ai/googleai';
 import {z} from 'genkit';
 import {
   TherapistChatInput,
@@ -23,7 +22,7 @@ export type TherapistChatOutput = z.infer<typeof z.string>;
 const prompt = ai.definePrompt(
   {
     name: 'therapistChatPrompt',
-    model: googleAI.model('gemini-1.5-flash-latest'),
+    model: 'groq/llama3-70b-8192',
     input: {
       schema: z.object({
         ...TherapistChatInputSchema.shape,

@@ -11,7 +11,6 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {googleAI} from '@genkit-ai/googleai';
 import {z} from 'genkit';
 
 const AnalyzeSessionInputSchema = z.object({
@@ -41,7 +40,7 @@ export async function analyzeSession(input: AnalyzeSessionInput): Promise<Analyz
 
 const analyzeSessionPrompt = ai.definePrompt({
   name: 'analyzeSessionPrompt',
-  model: googleAI.model('gemini-1.5-flash-latest'),
+  model: 'groq/llama3-70b-8192',
   input: {schema: AnalyzeSessionInputSchema},
   output: {schema: AnalyzeSessionOutputSchema},
   prompt: `You are an AI therapy session analyzer. Your tone is gentle, empathetic, and affirming. You are analyzing a recent therapy chat session to provide a soft, supportive summary.
