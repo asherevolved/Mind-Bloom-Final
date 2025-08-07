@@ -10,18 +10,15 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import Groq from 'groq-sdk';
 import { AnalyzeSessionInput, AnalyzeSessionInputSchema, AnalyzeSessionOutput, AnalyzeSessionOutputSchema } from './chat.types';
 
-export async function analyzeSession(input: AnalyzeSessionInput): Promise<AnalyzeSessionOutput> {
-  return analyzeSessionFlow(input);
-}
 
-const analyzeSessionPrompt = ai.definePrompt({
-  name: 'analyzeSessionPrompt',
-  model: 'gemini-1.5-flash-latest',
-  input: {schema: AnalyzeSessionInputSchema},
-  output: {schema: AnalyzeSessionOutputSchema},
-  prompt: `You are an AI therapy session analyzer. Your tone is gentle, empathetic, and affirming. You are analyzing a recent therapy chat session to provide a soft, supportive summary.
+const groq = new Groq({
+    apiKey: process.env.GROQ_API_KEY,
+});
+
+const promptTemplate = `You are an AI therapy session analyzer. Your tone is gentle, empathetic, and affirming. You are analyzing a recent therapy chat session to provide a soft, supportive summary.
 
 Session Transcript:
 {{{transcript}}}
@@ -42,8 +39,7 @@ Your task is to analyze the provided transcript and generate a structured JSON o
     -   Each step must have a clear, simple title and a one-sentence description.
 
 Produce a valid JSON object based on the output schema.
-`,
-});
+`;
 
 const analyzeSessionFlow = ai.defineFlow(
   {
@@ -51,8 +47,38 @@ const analyzeSessionFlow = ai.defineFlow(
     inputSchema: AnalyzeSessionInputSchema,
     outputSchema: AnalyzeSessionOutputSchema,
   },
-  async input => {
-    const {output} = await analyzeSessionPrompt(input);
-    return output!;
+  async (input) => {
+    const filledPrompt = promptTemplate.replace('{{{transcript}}}', input.transcript);
+
+    const chatCompletion = await groq.chat.completions.create({
+        messages: [
+            { role: 'user', content: filledPrompt },
+        ],
+        model: 'llama3-70b-8192',
+        // @ts-ignore
+        response_format: { type: "json_object" },
+    });
+
+    const response = chatCompletion.choices[0]?.message?.content;
+    if (!response) {
+      throw new Error('No response from Groq API');
+    }
+    
+    // The model sometimes returns the JSON wrapped in markdown, so we clean it
+    const cleanedResponse = response.replace(/^```json\n/, '').replace(/\n```$/, '');
+
+    try {
+        const parsed = JSON.parse(cleanedResponse);
+        return AnalyzeSessionOutputSchema.parse(parsed);
+    } catch(e) {
+        console.error("Failed to parse session analysis JSON:", e);
+        console.error("Raw response from Groq:", response);
+        throw new Error("The AI returned an invalid analysis format. Please try again.");
+    }
   }
 );
+
+
+export async function analyzeSession(input: AnalyzeSessionInput): Promise<AnalyzeSessionOutput> {
+  return analyzeSessionFlow(input);
+}

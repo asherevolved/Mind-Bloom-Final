@@ -27,23 +27,10 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { therapistChatStream } from '@/ai/flows/therapist-chat-stream';
 import { MainAppLayout } from '@/components/main-app-layout';
-
-type Message = {
-  role: 'user' | 'assistant';
-  content: string;
-  audioUrl?: string;
-  id?: string;
-};
-
-type Conversation = {
-  id: string;
-  title: string;
-  created_at: string;
-  status: 'active' | 'ended';
-};
+import type { ChatMessage, Conversation } from '@/ai/flows/chat.types';
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -181,35 +168,28 @@ export default function ChatPage() {
     setInput('');
     setIsLoading(true);
 
-    const newUserMessage: Message = { role: 'user', content: currentInput };
+    const newUserMessage: ChatMessage = { role: 'user', content: currentInput };
     
-    // Determine if we need to create a new conversation
-    const isNewConversation = !activeConversationId;
+    let convoId = activeConversationId;
+    if (!convoId) {
+        const newId = await createNewConversation(currentInput);
+        if (!newId) {
+             setIsLoading(false);
+             setInput(currentInput); // Put message back
+             return;
+        }
+        convoId = newId;
+        setActiveConversationId(newId);
+    }
     
     // Add user message to UI immediately
     setMessages(prev => [...prev, newUserMessage]);
     
-    let convoId = activeConversationId;
-    
-    if (isNewConversation) {
-        const newId = await createNewConversation(currentInput);
-        if (!newId) {
-             setIsLoading(false);
-             setMessages(prev => prev.slice(0, -1)); // Rollback UI
-             setInput(currentInput);
-             return;
-        }
-        convoId = newId;
-        setActiveConversationId(newId); // Set the new ID as active
-    }
-
-
     try {
         if (!convoId) {
             throw new Error("Conversation ID is not available.");
         }
 
-        // Now that we're sure we have a convoId, save the user message
         const { data: savedMessageData, error: saveError } = await supabase
             .from('messages')
             .insert({ conversation_id: convoId, role: 'user', content: currentInput })
@@ -218,18 +198,16 @@ export default function ChatPage() {
 
         if (saveError || !savedMessageData) throw saveError || new Error("Failed to save user message.");
         
-        // Update the message in the UI with its new DB-generated ID
+        // Update UI message with ID from DB
         setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: savedMessageData.id} : msg));
         
-        // Prepare for assistant response
+        // Add empty assistant message to prepare for streaming
         setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
         
-        // Award badge on first message of a new chat
-        if (isNewConversation) {
+        if (!activeConversationId) {
             await awardBadge('therapy_starter', 'Therapy Starter');
         }
         
-        // We need to refetch messages from state to ensure we have the latest.
         const updatedMessages = [...messages, newUserMessage];
         const chatHistoryForAI = updatedMessages.slice(-10).map(m => ({ role: m.role, content: m.content }));
         
@@ -270,7 +248,7 @@ export default function ChatPage() {
     } catch (error: any) {
       console.error(error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI. Please try again.' });
-      setMessages(prev => prev.filter(m => m !== newUserMessage && m.content !== '')); // More robust rollback
+      setMessages(prev => prev.filter(m => m.content !== '')); // Rollback UI by removing empty assistant message
       setInput(currentInput);
     } finally {
       setIsLoading(false);
@@ -431,7 +409,7 @@ export default function ChatPage() {
                 </div>
             </div>
             <div className="flex items-center gap-2">
-                <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={() => setIsVoiceMode(!isVoiceMode)} disabled={isLoading}><Mic /></Button>
+                <Button size="icon" variant={isVoiceMode ? "default" : "outline"} onClick={() => setIsVoiceMode(!isVoiceMode)}><Mic /></Button>
                 <AlertDialog>
                 <AlertDialogTrigger asChild>
                     <Button variant="destructive" size="sm" disabled={messages.length === 0 || !activeConversationId || isEndingSession}>

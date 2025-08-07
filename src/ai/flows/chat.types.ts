@@ -5,13 +5,24 @@ import {z} from 'genkit';
 export const ChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  id: z.string().optional(),
+  audioUrl: z.string().optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+
+export const ConversationSchema = z.object({
+    id: z.string(),
+    title: z.string(),
+    created_at: z.string(),
+    status: z.enum(['active', 'ended']),
+});
+export type Conversation = z.infer<typeof ConversationSchema>;
+
 
 export const TherapistChatInputSchema = z.object({
   message: z.string().describe('The latest message from the user.'),
   therapyTone: z.string().optional().describe("The user's preferred communication style for the AI therapist (e.g., 'Reflective Listener')."),
-  chatHistory: z.array(ChatMessageSchema).optional().describe('An array of previous messages in the conversation.'),
+  chatHistory: z.array(z.object({role: z.enum(['user', 'assistant']), content: z.string()})).optional().describe('An array of previous messages in the conversation.'),
 });
 export type TherapistChatInput = z.infer<typeof TherapistChatInputSchema>;
 export type TherapistChatOutput = z.infer<typeof z.string>;
