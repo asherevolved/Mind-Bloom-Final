@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Mic, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare } from 'lucide-react';
+import { Bot, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { analyzeSession } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
@@ -23,8 +23,6 @@ import {
 import { supabase } from '@/lib/supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
-import { therapistChatStream } from '@/ai/flows/therapist-chat-stream';
 import { MainAppLayout } from '@/components/main-app-layout';
 import type { ChatMessage, Conversation } from '@/ai/flows/chat.types';
 
@@ -37,11 +35,11 @@ export default function ChatPage() {
   const [isEndingSession, setIsEndingSession] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [therapyTone, setTherapyTone] = useState<string | undefined>(undefined);
-
+  
   const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const awardBadge = async (code: string, name: string) => {
     if (!user) return;
@@ -105,11 +103,8 @@ export default function ChatPage() {
       const currentUser = session?.user;
       setUser(currentUser ?? null);
       if (currentUser) {
-        const { data } = await supabase.from('profiles').select('therapy_tone').eq('id', currentUser.id).single();
-        setTherapyTone(data?.therapy_tone || 'Reflective Listener');
         await fetchConversations(currentUser.id);
       } else {
-        // If no user, redirect to login. This page is not for guests.
         router.push('/');
       }
     });
@@ -134,110 +129,114 @@ export default function ChatPage() {
     setActiveConversationId(null);
     setMessages([]);
   };
-  
-  const createNewConversation = async (firstMessage: string): Promise<string | null> => {
-      if (!user) return null;
-      const title = firstMessage.substring(0, 40) + (firstMessage.length > 40 ? '...' : '');
-      const { data, error } = await supabase
-        .from('conversations')
-        .insert({ title, user_id: user.id })
-        .select('id')
-        .single();
-      
-      if (error || !data) {
-        console.error('Create conversation error:', error);
-        toast({ variant: 'destructive', title: 'Error', description: 'Could not create a new conversation.' });
-        return null;
-      }
-      
-      await fetchConversations(user.id);
-      return data.id;
-  };
 
   const handleSend = async () => {
-    if (!input.trim() || !user || isEndingSession) {
-        if (!input.trim()) {
-            toast({variant: 'destructive', title: 'Empty Message', description: 'Please enter a message before sending.'});
-        }
-        return;
-    }
-
+    if (!input.trim() || !user) return;
+  
     const currentInput = input;
     setInput('');
     setIsLoading(true);
+    abortControllerRef.current = new AbortController();
 
-    const newUserMessage: ChatMessage = { role: 'user', content: currentInput };
-    
-    let convoId = activeConversationId;
-    if (!convoId) {
-        const newId = await createNewConversation(currentInput);
-        if (!newId) {
-             setIsLoading(false);
-             setInput(currentInput); // Put message back
-             return;
-        }
-        convoId = newId;
-        setActiveConversationId(newId);
-    }
-    
-    // Add user message to UI immediately
+    const newUserMessage: ChatMessage = { role: 'user', content: currentInput, id: `local-user-${Date.now()}` };
     setMessages(prev => [...prev, newUserMessage]);
     
+    // Add empty assistant message to prepare for streaming
+    const assistantMessageId = `local-assistant-${Date.now()}`;
+    setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
+    
     try {
-        if (!convoId) {
-            throw new Error("Conversation ID is not available.");
-        }
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: currentInput,
+          conversationId: activeConversationId,
+        }),
+        signal: abortControllerRef.current.signal,
+      });
 
-        const { data: savedMessageData, error: saveError } = await supabase
-            .from('messages')
-            .insert({ conversation_id: convoId, role: 'user', content: currentInput })
-            .select('id')
-            .single();
+      if (!response.ok || !response.body) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'The AI failed to respond.');
+      }
 
-        if (saveError || !savedMessageData) throw saveError || new Error("Failed to save user message.");
-        
-        // Update UI message with ID from DB
-        setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: savedMessageData.id} : msg));
-        
-        // Add empty assistant message to prepare for streaming
-        setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-        
-        if (!activeConversationId) {
-            await awardBadge('therapy_starter', 'Therapy Starter');
-        }
-        
-        const updatedMessages = [...messages, newUserMessage];
-        const chatHistoryForAI = updatedMessages.slice(-10).map(m => ({ role: m.role, content: m.content }));
-        
-        const stream = await therapistChatStream({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
-        
-        let finalResponse = '';
+      // Handle the streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let done = false;
+      let finalResponse = '';
+      let newConversationId: string | null = null;
+      let userMessageId: string | null = null;
 
-        for await (const chunk of stream) {
-            finalResponse += chunk;
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        const chunk = decoder.decode(value, { stream: true });
+        
+        // Check for metadata at the beginning of the stream
+        if (!newConversationId && chunk.startsWith('{"metadata":')) {
+            const endOfMetadata = chunk.indexOf('}\n');
+            if (endOfMetadata !== -1) {
+                const metadataStr = chunk.substring(0, endOfMetadata + 1);
+                try {
+                    const { metadata } = JSON.parse(metadataStr);
+                    newConversationId = metadata.conversationId;
+                    userMessageId = metadata.userMessageId;
+                    
+                    if (newConversationId && !activeConversationId) {
+                      setActiveConversationId(newConversationId);
+                      await awardBadge('therapy_starter', 'Therapy Starter');
+                    }
+                    
+                    // Update user message with DB ID
+                    setMessages(prev => prev.map(msg => 
+                      msg.id === newUserMessage.id ? {...msg, id: userMessageId || msg.id } : msg
+                    ));
 
-            setMessages(prev => {
-                const newMessages = [...prev];
-                const lastMessage = newMessages[newMessages.length - 1];
-                if (lastMessage && lastMessage.role === 'assistant') {
-                    lastMessage.content = finalResponse;
+                    // Remove metadata from chunk
+                    const remainingChunk = chunk.substring(endOfMetadata + 2);
+                    finalResponse += remainingChunk;
+                } catch(e) {
+                   finalResponse += chunk; // Not metadata, just content
                 }
-                return newMessages;
-            });
+            } else {
+                 finalResponse += chunk; // Not a complete metadata object yet
+            }
+        } else {
+            finalResponse += chunk;
         }
-        
-        await supabase.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: finalResponse });
 
+        setMessages(prev => {
+            const newMessages = [...prev];
+            const lastMessage = newMessages.find(m => m.id === assistantMessageId);
+            if (lastMessage && lastMessage.role === 'assistant') {
+                lastMessage.content = finalResponse;
+            }
+            return newMessages;
+        });
+      }
+
+      // Save the final assistant message
+      if(newConversationId) {
+         await supabase.from('messages').insert({ conversation_id: newConversationId, role: 'assistant', content: finalResponse });
+      }
 
     } catch (error: any) {
-      console.error(error);
-      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI. Please try again.' });
-      setMessages(prev => prev.filter(m => m.content !== '')); // Rollback UI by removing empty assistant message
-      setInput(currentInput);
+      if (error.name === 'AbortError') {
+        toast({ title: 'Stream Canceled' });
+      } else {
+        toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI.' });
+        // Rollback UI
+        setMessages(prev => prev.filter(m => m.id !== newUserMessage.id && m.id !== assistantMessageId));
+        setInput(currentInput);
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
+
 
   const handleEndSession = async () => {
     if (!activeConversationId || !user || messages.length === 0) {
@@ -284,7 +283,9 @@ export default function ChatPage() {
     } catch(err) {
         console.error("Failed to end and analyze session:", err);
         toast({ variant: 'destructive', title: 'Error', description: 'Could not finalize the session analysis.' });
-        await supabase.from('conversations').update({ status: 'active' }).eq('id', activeConversationId);
+        if(activeConversationId) {
+            await supabase.from('conversations').update({ status: 'active' }).eq('id', activeConversationId);
+        }
     } finally {
         setIsEndingSession(false);
     }
@@ -293,16 +294,13 @@ export default function ChatPage() {
   const handleDeleteConversation = async (conversationId: string) => {
       if (!user) return;
       
-      // Cascade delete is setup in Supabase, so this deletes messages too.
       const { error } = await supabase.from('conversations').delete().eq('id', conversationId);
       
       if (error) {
         toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete conversation.'});
       } else {
         toast({ title: "Conversation Deleted" });
-        // Refetch conversations to update the sidebar
         await fetchConversations(user.id);
-        // If the deleted one was active, reset the chat view
         if (activeConversationId === conversationId) {
             setActiveConversationId(null);
             setMessages([]);
@@ -311,26 +309,18 @@ export default function ChatPage() {
   }
 
   const handleDeleteMessage = async (messageId?: string) => {
-    if (!messageId) return;
-
-    // Optimistically remove from UI
+    if (!messageId || messageId.startsWith('local-')) return;
     setMessages(prev => prev.filter(m => m.id !== messageId));
-
     const { error } = await supabase.from('messages').delete().eq('id', messageId);
-
     if (error) {
         toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete message. Please refresh.' });
-        // Re-fetch messages to restore state if delete failed
-        if (activeConversationId) {
-            fetchMessages(activeConversationId);
-        }
+        if (activeConversationId) fetchMessages(activeConversationId);
     }
   };
 
   return (
     <MainAppLayout>
       <div className="flex-1 grid grid-cols-[auto_1fr] h-[calc(100vh_-_57px)]">
-        {/* Sidebar */}
         <aside className="w-64 flex-shrink-0 border-r bg-background flex flex-col">
             <div className="p-4 border-b">
                 <Button className="w-full" onClick={handleNewChat}><Plus className="mr-2"/> New Chat</Button>
@@ -382,7 +372,6 @@ export default function ChatPage() {
             <div className="p-4 border-t text-xs text-muted-foreground">Mind Bloom v1.0</div>
         </aside>
 
-        {/* Main Chat Area */}
         <div className="flex-1 flex flex-col">
             <header className="flex items-center justify-between border-b p-4">
             <div className="flex items-center gap-3">
@@ -421,7 +410,7 @@ export default function ChatPage() {
                 {msg.role === 'user' && (
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" disabled={msg.id?.startsWith('local-')}>
                                 <Trash2 className="h-4 w-4 text-muted-foreground" />
                             </Button>
                         </AlertDialogTrigger>
@@ -441,23 +430,20 @@ export default function ChatPage() {
                 )}
                 
                 <div className={`max-w-xs rounded-lg px-4 py-2 sm:max-w-md lg:max-w-lg ${msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    {msg.audioUrl && <Button variant="ghost" size="icon" className="h-7 w-7 mt-1" onClick={() => new Audio(msg.audioUrl!).play()}><User className="h-4 w-4" /></Button>}
+                    {msg.content ? (
+                         <p className="whitespace-pre-wrap">{msg.content}</p>
+                    ) : (
+                        <div className="flex items-center gap-1">
+                            <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                            <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                            <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce"></span>
+                        </div>
+                    )}
                 </div>
 
                 {msg.role === 'user' && <Avatar className="h-8 w-8"><AvatarFallback><User /></AvatarFallback></Avatar>}
                 </div>
             ))}
-            {isLoading && messages[messages.length -1]?.role === 'assistant' && messages[messages.length -1]?.content === '' && (
-                <div className="flex items-end gap-2 justify-start">
-                <Avatar className="h-8 w-8"><AvatarFallback><Bot /></AvatarFallback></Avatar>
-                <div className="rounded-lg px-4 py-2 bg-muted flex items-center gap-1">
-                    <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                    <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                    <span className="h-2 w-2 bg-foreground/50 rounded-full animate-bounce"></span>
-                </div>
-                </div>
-            )}
             <div ref={messagesEndRef} />
             </main>
 

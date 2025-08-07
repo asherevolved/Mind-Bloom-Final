@@ -81,9 +81,3 @@ export const SuggestDailyTasksOutputSchema = z.object({
 export type SuggestDailyTasksOutput = z.infer<typeof SuggestDailyTasksOutputSchema>;
 
 
-// For Text-to-Speech
-export const TextToSpeechInputSchema = z.object({
-  text: z.string().describe('The text to be converted to speech.'),
-});
-export type TextToSpeechInput = z.infer<typeof TextToSpeechInputSchema>;
-export type TextToSpeechOutput = string;
