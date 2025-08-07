@@ -62,17 +62,11 @@ const therapistChatFlow = ai.defineFlow(
       isAssistant: msg.role === 'assistant',
     })) || [];
 
-    // 1. Render the prompt with the input data to get the final string
-    const {prompt: renderedPrompt} = await prompt.render({
+    const {output} = await prompt({
         ...input,
         chatHistory: processedChatHistory,
     });
-
-    // 2. Call ai.generate with the fully rendered prompt
-    const {output} = await ai.generate({
-        prompt: renderedPrompt,
-        model: googleAI.model('gemini-1.5-flash-latest'),
-    });
+    
     return output!;
   }
 );
