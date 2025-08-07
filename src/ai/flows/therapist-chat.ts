@@ -1,4 +1,3 @@
-
 'use server';
 
 /**
@@ -36,7 +35,7 @@ Your Core Principles:
 
 Chat History:
 {{#each chatHistory}}
-{{#if (eq role 'user')}}
+{{#if isUser}}
 User: {{content}}
 {{else}}
 Bloom: {{content}}
@@ -55,7 +54,12 @@ const therapistChatFlow = ai.defineFlow(
     outputSchema: TherapistChatOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
+    const processedChatHistory = (input.chatHistory || []).map(m => ({
+        ...m,
+        isUser: m.role === 'user',
+    }));
+
+    const {output} = await prompt({...input, chatHistory: processedChatHistory});
     return output!;
   }
 );

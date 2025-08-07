@@ -35,7 +35,7 @@ Your Core Principles:
 
 Chat History:
 {{#each chatHistory}}
-{{#if (eq role 'user')}}
+{{#if isUser}}
 User: {{content}}
 {{else}}
 Bloom: {{content}}
@@ -56,8 +56,13 @@ export const therapistChatStreamFlow = ai.defineFlow(
     streamSchema: z.object({chunk: TherapistChatStreamOutputSchema}),
   },
   async (input, stream) => {
+    const processedChatHistory = (input.chatHistory || []).map(m => ({
+        ...m,
+        isUser: m.role === 'user',
+    }));
+
     // Call the prompt object directly, which handles the AI generation and streaming.
-    const {stream: resultStream} = await streamingPrompt(input);
+    const {stream: resultStream} = await streamingPrompt({...input, chatHistory: processedChatHistory});
 
     // Stream the results back to the client
     for await (const chunk of resultStream) {
