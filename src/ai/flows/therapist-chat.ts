@@ -55,17 +55,20 @@ const therapistChatFlow = ai.defineFlow(
     outputSchema: TherapistChatOutputSchema,
   },
   async input => {
+    // Process chat history to add boolean flags for the template
     const processedChatHistory = input.chatHistory?.map(msg => ({
       ...msg,
       isUser: msg.role === 'user',
       isAssistant: msg.role === 'assistant',
     })) || [];
 
+    // 1. Render the prompt with the input data to get the final string
     const {prompt: renderedPrompt} = await prompt.render({
         ...input,
         chatHistory: processedChatHistory,
     });
 
+    // 2. Call ai.generate with the fully rendered prompt
     const {output} = await ai.generate({
         prompt: renderedPrompt,
         model: googleAI.model('gemini-1.5-flash-latest'),

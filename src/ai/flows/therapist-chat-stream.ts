@@ -56,29 +56,33 @@ export const therapistChatStreamFlow = ai.defineFlow(
     streamSchema: z.object({chunk: TherapistChatStreamOutputSchema}),
   },
   async (input, stream) => {
+    // Process chat history to add boolean flags for the template
     const processedChatHistory = input.chatHistory?.map(msg => ({
       ...msg,
       isUser: msg.role === 'user',
       isAssistant: msg.role === 'assistant',
     })) || [];
 
+    // 1. Render the prompt with the input data to get the final string
     const {prompt: renderedPrompt} = await streamingPrompt.render({
       ...input,
       chatHistory: processedChatHistory,
     });
     
+    // 2. Call ai.generate with the fully rendered prompt
     const {stream: resultStream, response} = await ai.generate({
       prompt: renderedPrompt,
       model: googleAI.model('gemini-1.5-flash-latest'),
       stream: true,
     });
 
+    // 3. Stream the results back to the client
     for await (const chunk of resultStream) {
       if (chunk.output) {
         stream.write({chunk: chunk.output as string});
       }
     }
-     // Wait for the full response to be available for saving.
+     // Wait for the full response to be available.
     await response;
   }
 );
