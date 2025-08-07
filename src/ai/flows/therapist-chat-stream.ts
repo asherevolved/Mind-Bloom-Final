@@ -8,7 +8,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {groq} from 'genkitx-groq';
+import {googleAI} from '@genkit-ai/googleai';
 import {z} from 'genkit';
 import {
   TherapistChatInput,
@@ -23,7 +23,7 @@ export type TherapistChatStreamOutput = z.infer<typeof z.string>;
 const streamingPrompt = ai.definePrompt(
   {
     name: 'therapistChatStreamingPrompt',
-    model: groq('llama3-70b-8192'),
+    model: googleAI.model('gemini-1.5-flash-latest'),
     input: {
       schema: z.object({
         ...TherapistChatInputSchema.shape,
