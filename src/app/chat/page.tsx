@@ -180,47 +180,41 @@ export default function ChatPage() {
     const currentInput = input;
     setInput('');
 
-    // Optimistically add user message to UI
     const newUserMessage: Message = { role: 'user', content: currentInput };
     setMessages(prev => [...prev, newUserMessage]);
     setIsLoading(true);
 
-    let currentConversationId = activeConversationId;
-    let savedUserMessageId: string | undefined = undefined;
+    let convoId = activeConversationId;
     
-    // Create new conversation if needed
-    if (!currentConversationId) {
+    if (!convoId) {
         const newId = await createNewConversation(currentInput);
         if (!newId) {
              setIsLoading(false);
-             setMessages(prev => prev.slice(0, -1)); // Clear optimistic message
-             setInput(currentInput); // Restore input
+             setMessages(prev => prev.slice(0, -1));
+             setInput(currentInput);
              return;
         };
-        currentConversationId = newId;
+        convoId = newId;
         setActiveConversationId(newId);
     }
-    
-    // Save user message and get its ID
-    const { data: savedMessageData, error: saveError } = await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'user', content: currentInput }).select('id').single();
-
-    if (saveError || !savedMessageData) {
-        console.error("Error saving user message:", saveError);
-        toast({ variant: 'destructive', title: 'Error', description: 'Could not send message.' });
-        setIsLoading(false);
-        setMessages(prev => prev.slice(0, -1)); // Clear optimistic message
-        setInput(currentInput); // Restore input
-        return;
-    } else {
-        savedUserMessageId = savedMessageData.id;
-        // Update the optimistic message with the real ID from the DB
-        setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: savedUserMessageId} : msg));
-    }
-    
-    // Add an empty assistant message to start streaming into.
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
+        if (!convoId) {
+            throw new Error("Conversation ID is not available.");
+        }
+
+        const { data: savedMessageData, error: saveError } = await supabase
+            .from('messages')
+            .insert({ conversation_id: convoId, role: 'user', content: currentInput })
+            .select('id')
+            .single();
+
+        if (saveError || !savedMessageData) throw saveError || new Error("Failed to save user message.");
+        
+        setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: savedMessageData.id} : msg));
+        
+        setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
         if (messages.length <= 1) {
             await awardBadge('therapy_starter', 'Therapy Starter');
         }
@@ -244,10 +238,7 @@ export default function ChatPage() {
             });
         }
         
-        // After streaming is complete, save the final assistant message
-        if (currentConversationId) {
-            await supabase.from('messages').insert({ conversation_id: currentConversationId, role: 'assistant', content: finalResponse });
-        }
+        await supabase.from('messages').insert({ conversation_id: convoId, role: 'assistant', content: finalResponse });
 
         if (isVoiceMode) {
             const audioResponse = await textToSpeech({ text: finalResponse });
