@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { isToday } from 'date-fns';
 import { User } from '@supabase/supabase-js';
+import type { GetAiTipOutput } from '@/ai/flows/chat.types';
 
 type DashboardData = {
     name: string;
@@ -97,7 +98,7 @@ export default function DashboardPage() {
             const lastMood = moodData?.[0] ? new Date(moodData[0].created_at) : null;
             const moodLoggedToday = lastMood ? isToday(lastMood) : false;
             
-            let tip = { tip: "Stay positive today and focus on your goals!" }; // Default tip
+            let tip: GetAiTipOutput = { tip: "Stay positive today and focus on your goals!" }; // Default tip
             try {
               tip = await getAiTip({
                   onboardingGoals: profileData.support_tags || [],

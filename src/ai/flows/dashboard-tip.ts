@@ -4,23 +4,11 @@
  * @fileOverview A flow for generating a daily AI-powered wellness tip.
  *
  * - getAiTip - Generates a personalized wellness tip.
- * - GetAiTipInput - The input type for the getAiTip function.
- * - GetAiTipOutput - The return type for the getAiTip function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-
-const GetAiTipInputSchema = z.object({
-  onboardingGoals: z.array(z.string()).describe("The user's stated goals from onboarding (e.g., 'Anxiety', 'Focus')."),
-  recentMood: z.string().describe("The user's most recent mood log entry note."),
-});
-export type GetAiTipInput = z.infer<typeof GetAiTipInputSchema>;
-
-const GetAiTipOutputSchema = z.object({
-  tip: z.string().describe('A single, concise, and actionable wellness tip for the user.'),
-});
-export type GetAiTipOutput = z.infer<typeof GetAiTipOutputSchema>;
+import { GetAiTipInput, GetAiTipInputSchema, GetAiTipOutput, GetAiTipOutputSchema } from './chat.types';
 
 
 const prompt = ai.definePrompt({

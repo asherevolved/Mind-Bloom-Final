@@ -179,30 +179,37 @@ export default function ChatPage() {
 
     const currentInput = input;
     setInput('');
-
-    const newUserMessage: Message = { role: 'user', content: currentInput };
-    setMessages(prev => [...prev, newUserMessage]);
     setIsLoading(true);
 
+    const newUserMessage: Message = { role: 'user', content: currentInput };
+    
+    // Determine if we need to create a new conversation
+    const isNewConversation = !activeConversationId;
+    
+    // Add user message to UI immediately
+    setMessages(prev => [...prev, newUserMessage]);
+    
     let convoId = activeConversationId;
     
-    if (!convoId) {
+    if (isNewConversation) {
         const newId = await createNewConversation(currentInput);
         if (!newId) {
              setIsLoading(false);
-             setMessages(prev => prev.slice(0, -1));
+             setMessages(prev => prev.slice(0, -1)); // Rollback UI
              setInput(currentInput);
              return;
-        };
+        }
         convoId = newId;
-        setActiveConversationId(newId);
+        setActiveConversationId(newId); // Set the new ID as active
     }
+
 
     try {
         if (!convoId) {
             throw new Error("Conversation ID is not available.");
         }
 
+        // Now that we're sure we have a convoId, save the user message
         const { data: savedMessageData, error: saveError } = await supabase
             .from('messages')
             .insert({ conversation_id: convoId, role: 'user', content: currentInput })
@@ -211,22 +218,27 @@ export default function ChatPage() {
 
         if (saveError || !savedMessageData) throw saveError || new Error("Failed to save user message.");
         
+        // Update the message in the UI with its new DB-generated ID
         setMessages(prev => prev.map(msg => msg === newUserMessage ? {...msg, id: savedMessageData.id} : msg));
         
+        // Prepare for assistant response
         setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-        if (messages.length <= 1) {
+        
+        // Award badge on first message of a new chat
+        if (isNewConversation) {
             await awardBadge('therapy_starter', 'Therapy Starter');
         }
-
-        const chatHistoryForAI = [...messages, newUserMessage].slice(-10).map(m => ({ role: m.role, content: m.content }));
+        
+        // We need to refetch messages from state to ensure we have the latest.
+        const updatedMessages = [...messages, newUserMessage];
+        const chatHistoryForAI = updatedMessages.slice(-10).map(m => ({ role: m.role, content: m.content }));
         
         const stream = await therapistChatStream({ message: currentInput, chatHistory: chatHistoryForAI, therapyTone });
         
         let finalResponse = '';
 
         for await (const chunk of stream) {
-            finalResponse += chunk.chunk;
+            finalResponse += chunk;
 
             setMessages(prev => {
                 const newMessages = [...prev];
@@ -258,7 +270,7 @@ export default function ChatPage() {
     } catch (error: any) {
       console.error(error);
       toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI. Please try again.' });
-      setMessages(prev => prev.slice(0, -2)); // Remove user message and empty assistant message
+      setMessages(prev => prev.filter(m => m !== newUserMessage && m.content !== '')); // More robust rollback
       setInput(currentInput);
     } finally {
       setIsLoading(false);

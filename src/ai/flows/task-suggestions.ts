@@ -1,30 +1,15 @@
+
 // src/ai/flows/task-suggestions.ts
 'use server';
 /**
  * @fileOverview A flow for suggesting daily tasks based on therapy history and emotional state.
  *
  * - suggestDailyTasks - A function that suggests daily tasks.
- * - SuggestDailyTasksInput - The input type for the suggestDailyTasks function.
- * - SuggestDailyTasksOutput - The return type for the suggestDailyTasks function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-
-const SuggestDailyTasksInputSchema = z.object({
-  therapyHistory: z
-    .string()
-    .describe('The user\u2019s therapy history, including chat transcripts and analysis.'),
-  emotionalState: z
-    .string()
-    .describe('A description of the user\u2019s current emotional state.'),
-});
-export type SuggestDailyTasksInput = z.infer<typeof SuggestDailyTasksInputSchema>;
-
-const SuggestDailyTasksOutputSchema = z.object({
-  tasks: z.array(z.string()).describe('A list of suggested daily tasks.'),
-});
-export type SuggestDailyTasksOutput = z.infer<typeof SuggestDailyTasksOutputSchema>;
+import { SuggestDailyTasksInput, SuggestDailyTasksInputSchema, SuggestDailyTasksOutput, SuggestDailyTasksOutputSchema } from './chat.types';
 
 export async function suggestDailyTasks(input: SuggestDailyTasksInput): Promise<SuggestDailyTasksOutput> {
   return suggestDailyTasksFlow(input);

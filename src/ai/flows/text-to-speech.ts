@@ -1,23 +1,16 @@
+
 'use server';
 /**
  * @fileOverview A flow for converting text to speech.
  *
  * - textToSpeech - A function that converts text to an audio data URI.
- * - TextToSpeechInput - The input type for the textToSpeech function.
- * - TextToSpeechOutput - The return type for the textToSpeech function.
  */
 
 import {ai} from '@/ai/genkit';
 import {googleAI} from '@genkit-ai/googleai';
 import {z} from 'genkit';
 import wav from 'wav';
-
-const TextToSpeechInputSchema = z.object({
-  text: z.string().describe('The text to be converted to speech.'),
-});
-export type TextToSpeechInput = z.infer<typeof TextToSpeechInputSchema>;
-
-export type TextToSpeechOutput = string;
+import { TextToSpeechInput, TextToSpeechInputSchema, TextToSpeechOutput } from './chat.types';
 
 async function toWav(
   pcmData: Buffer,

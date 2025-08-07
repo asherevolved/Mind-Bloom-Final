@@ -4,7 +4,6 @@
  * @fileOverview A non-streaming AI chatbot flow for Mind Bloom.
  *
  * - therapistChat - A function that returns a complete AI response.
- * - TherapistChatInput - The input type for the therapistChat function (re-exported).
  */
 
 import {ai} from '@/ai/genkit';
@@ -12,10 +11,8 @@ import {z} from 'genkit';
 import {
   TherapistChatInput,
   TherapistChatInputSchema,
+  TherapistChatOutput,
 } from './chat.types';
-
-export {TherapistChatInput};
-export type TherapistChatOutput = z.infer<typeof z.string>;
 
 
 // Define the prompt for the therapist chatbot
