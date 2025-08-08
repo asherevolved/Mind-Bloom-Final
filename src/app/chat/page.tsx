@@ -58,7 +58,6 @@ export default function ChatPage() {
       .from('conversations')
       .select('id, title, created_at, status')
       .eq('user_id', currentUserId)
-      .eq('status', 'active')
       .order('updated_at', { ascending: false });
 
     if (error) {
@@ -69,8 +68,8 @@ export default function ChatPage() {
       const lastActiveId = localStorage.getItem('activeConversationId');
       if (lastActiveId && data.some(c => c.id === lastActiveId)) {
         setActiveConversationId(lastActiveId);
-      } else if (data.length > 0) {
-        setActiveConversationId(data[0].id);
+      } else if (data.length > 0 && data.find(c => c.status === 'active')) {
+         setActiveConversationId(data.find(c => c.status === 'active')!.id);
       } else {
         setActiveConversationId(null);
         setMessages([]);
@@ -301,17 +300,23 @@ export default function ChatPage() {
   const handleDeleteConversation = async (conversationId: string) => {
       if (!user) return;
       
-      const { error } = await supabase.from('conversations').delete().eq('id', conversationId);
-      
-      if (error) {
-        toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete conversation.'});
-      } else {
+      try {
+        // Must delete dependent records first
+        await supabase.from('conversation_analyses').delete().eq('conversation_id', conversationId);
+        await supabase.from('messages').delete().eq('conversation_id', conversationId);
+        const { error } = await supabase.from('conversations').delete().eq('id', conversationId);
+        if(error) throw error;
+        
         toast({ title: "Conversation Deleted" });
         await fetchConversations(user.id);
+
         if (activeConversationId === conversationId) {
             setActiveConversationId(null);
             setMessages([]);
         }
+
+      } catch (error: any) {
+         toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to delete conversation.'});
       }
   }
 
@@ -391,12 +396,12 @@ export default function ChatPage() {
             <div className="flex items-center gap-2">
                 <AlertDialog>
                 <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm" disabled={messages.length === 0 || !activeConversationId || isEndingSession}>
+                    <Button variant="destructive" size="sm" disabled={messages.length === 0 || !activeConversationId || isEndingSession || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}>
                         {isEndingSession ? "Analyzing..." : <><PhoneOff className="mr-2"/> End & Analyze</>}
                     </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
-                    <AlertDialogHeader><AlertDialogTitle>End your session?</AlertDialogTitle><AlertDialogDescription>This will end the current chat, save the analysis, and start a new chat session.</AlertDialogDescription></AlertDialogHeader>
+                    <AlertDialogHeader><AlertDialogTitle>End your session?</AlertDialogTitle><AlertDialogDescription>This will end the current chat, save the analysis, and you can start a new one.</AlertDialogDescription></AlertDialogHeader>
                     <AlertDialogFooter><AlertDialogCancel>Continue Chat</AlertDialogCancel><AlertDialogAction onClick={handleEndSession}>End & Analyze</AlertDialogAction></AlertDialogFooter>
                 </AlertDialogContent>
                 </AlertDialog>
@@ -462,10 +467,10 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()}
-                disabled={isLoading || isEndingSession || !user}
+                disabled={isLoading || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}
                 className="flex-1"
                 />
-                <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession || !user}><Send /></Button>
+                <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}><Send /></Button>
             </div>
             </footer>
         </div>
