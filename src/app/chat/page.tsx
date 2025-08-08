@@ -56,7 +56,7 @@ export default function ChatPage() {
     setIsLoadingConversations(true);
     const { data, error } = await supabase
       .from('conversations')
-      .select('id, title, created_at')
+      .select('id, title, created_at, status')
       .eq('user_id', currentUserId)
       .eq('status', 'active')
       .order('updated_at', { ascending: false });
@@ -175,6 +175,7 @@ export default function ChatPage() {
       let done = false;
       let finalResponse = '';
       let receivedMetadata = false;
+      let newConversationId: string | null = activeConversationId;
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
@@ -191,6 +192,7 @@ export default function ChatPage() {
                 const { metadata } = JSON.parse(metadataStr);
                 
                 if (metadata.conversationId) {
+                    newConversationId = metadata.conversationId;
                     setActiveConversationId(metadata.conversationId);
                     await awardBadge('therapy_starter', 'Therapy Starter');
                 }
@@ -220,7 +222,7 @@ export default function ChatPage() {
         });
       }
       
-      const convoIdToSave = activeConversationId;
+      const convoIdToSave = newConversationId;
       if (convoIdToSave) {
          await supabase.from('messages').insert({ conversation_id: convoIdToSave, role: 'assistant', content: finalResponse });
          if (isNewConversation) {
