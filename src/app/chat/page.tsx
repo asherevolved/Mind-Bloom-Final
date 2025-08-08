@@ -138,6 +138,8 @@ export default function ChatPage() {
     setIsLoading(true);
     abortControllerRef.current = new AbortController();
 
+    const isNewConversation = !activeConversationId;
+
     const newUserMessage: ChatMessage = { role: 'user', content: currentInput, id: `local-user-${Date.now()}` };
     setMessages(prev => [...prev, newUserMessage]);
     
@@ -172,57 +174,56 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let done = false;
       let finalResponse = '';
-      let newConversationId: string | null = null;
-      let userMessageId: string | null = null;
+      let receivedMetadata = false;
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
         let chunk = decoder.decode(value, { stream: true });
         
-        try {
-          const metadataPrefix = '{"metadata":';
-          const endOfMetadata = '}\n\n';
-          if (!newConversationId && chunk.startsWith(metadataPrefix)) {
+        const metadataPrefix = '{"metadata":';
+        const endOfMetadata = '}\n\n';
+        if (isNewConversation && !receivedMetadata && chunk.startsWith(metadataPrefix)) {
             const endOfJson = chunk.indexOf(endOfMetadata);
             if (endOfJson !== -1) {
-              const metadataStr = chunk.substring(0, endOfJson + 1);
-              const { metadata } = JSON.parse(metadataStr);
-              newConversationId = metadata.conversationId;
-              userMessageId = metadata.userMessageId;
-              
-              if (newConversationId && !activeConversationId) {
-                setActiveConversationId(newConversationId);
-                await awardBadge('therapy_starter', 'Therapy Starter');
-              }
-              
-              setMessages(prev => prev.map(msg => 
-                msg.id === newUserMessage.id ? {...msg, id: userMessageId || msg.id } : msg
-              ));
+              try {
+                const metadataStr = chunk.substring(0, endOfJson + 1);
+                const { metadata } = JSON.parse(metadataStr);
+                
+                if (metadata.conversationId) {
+                    setActiveConversationId(metadata.conversationId);
+                    await awardBadge('therapy_starter', 'Therapy Starter');
+                }
+                
+                if (metadata.userMessageId) {
+                    setMessages(prev => prev.map(msg => 
+                        msg.id === newUserMessage.id ? {...msg, id: metadata.userMessageId } : msg
+                    ));
+                }
 
-              chunk = chunk.substring(endOfJson + endOfMetadata.length);
+                chunk = chunk.substring(endOfJson + endOfMetadata.length);
+                receivedMetadata = true;
+              } catch (e) {
+                  console.error("Error parsing metadata chunk:", e);
+              }
             }
-          }
-        } catch (e) {
-            console.error("Error parsing metadata chunk:", e);
         }
 
         finalResponse += chunk;
 
         setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages.find(m => m.id === assistantMessageId);
-            if (lastMessage && lastMessage.role === 'assistant') {
-                lastMessage.content = finalResponse;
-            }
-            return newMessages;
+            return prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: finalResponse } 
+                : msg
+            );
         });
       }
       
-      const convoIdToSave = newConversationId || activeConversationId;
+      const convoIdToSave = activeConversationId;
       if (convoIdToSave) {
          await supabase.from('messages').insert({ conversation_id: convoIdToSave, role: 'assistant', content: finalResponse });
-         if (newConversationId) {
+         if (isNewConversation) {
             await fetchConversations(user.id);
          }
       }
