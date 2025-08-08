@@ -70,6 +70,8 @@ export default function ChatPage() {
         setActiveConversationId(lastActiveId);
       } else if (data.length > 0 && data.find(c => c.status === 'active')) {
          setActiveConversationId(data.find(c => c.status === 'active')!.id);
+      } else if (data.length > 0) {
+        setActiveConversationId(data[0].id);
       } else {
         setActiveConversationId(null);
         setMessages([]);
@@ -175,6 +177,8 @@ export default function ChatPage() {
       let finalResponse = '';
       let receivedMetadata = false;
       let newConversationId: string | null = activeConversationId;
+      let newAssistantMessageId: string | null = null;
+
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
@@ -192,8 +196,6 @@ export default function ChatPage() {
                 
                 if (metadata.conversationId) {
                     newConversationId = metadata.conversationId;
-                    setActiveConversationId(metadata.conversationId);
-                    await awardBadge('therapy_starter', 'Therapy Starter');
                 }
                 
                 if (metadata.userMessageId) {
@@ -223,9 +225,34 @@ export default function ChatPage() {
       
       const convoIdToSave = newConversationId;
       if (convoIdToSave) {
-         await supabase.from('messages').insert({ conversation_id: convoIdToSave, role: 'assistant', content: finalResponse });
+         // Save the assistant's final message
+         const { data: assistantMsgData, error: assistantMsgError } = await supabase
+            .from('messages')
+            .insert({ conversation_id: convoIdToSave, role: 'assistant', content: finalResponse })
+            .select('id')
+            .single();
+
+         if (assistantMsgError || !assistantMsgData) {
+            throw new Error('Could not save AI response.');
+         }
+         newAssistantMessageId = assistantMsgData.id;
+         
+         // Update the message in the UI with the real ID
+         setMessages(prev => prev.map(msg => 
+            msg.id === assistantMessageId ? {...msg, id: newAssistantMessageId! } : msg
+         ));
+
+         // Update the conversation's timestamp
+         await supabase
+            .from('conversations')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', convoIdToSave);
+
+         // If it was a new conversation, we need to refresh the list and set it active
          if (isNewConversation) {
             await fetchConversations(user.id);
+            setActiveConversationId(newConversationId);
+            await awardBadge('therapy_starter', 'Therapy Starter');
          }
       }
 
