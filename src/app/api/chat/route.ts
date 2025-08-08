@@ -2,12 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
-import { Stream } from 'groq-sdk/streaming';
+
+export const runtime = 'edge';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
-
-// This is an experimental feature for streaming from API routes
-export const runtime = 'edge';
 
 const systemPrompt = `You are an AI therapist named Bloom. Your primary goal is to provide mental health support with deep empathy, compassion, and understanding. You are a safe, non-judgmental space for the user to explore their feelings.
 
@@ -18,23 +16,6 @@ Your Core Principles:
 4.  **Be Warm and Affirming**: Your tone should always be warm, gentle, and supportive.
 5.  **Be Context-Aware**: Refer back to themes or specific points the user has made in the conversation to show you are building a connection and remembering their story.`;
 
-function getSupabaseAdmin() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-        throw new Error('Missing Supabase URL or service role key for admin client');
-    }
-
-    return createClient(supabaseUrl, supabaseServiceKey, {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false
-        }
-    });
-}
-
-
 export async function POST(req: NextRequest) {
   try {
     const { message, conversationId: currentConversationId, user } = await req.json();
@@ -43,7 +24,20 @@ export async function POST(req: NextRequest) {
       return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
     
-    const supabaseAdmin = getSupabaseAdmin();
+    // Correctly initialize Supabase admin client inside the route handler
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error('Missing Supabase URL or service role key for admin client');
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false
+        }
+    });
 
     let conversationId = currentConversationId;
     const isNewConversation = !conversationId;
