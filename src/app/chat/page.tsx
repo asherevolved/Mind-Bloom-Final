@@ -65,18 +65,6 @@ export default function ChatPage() {
       setConversations([]);
     } else {
       setConversations(data as Conversation[]);
-      const lastActiveId = localStorage.getItem('activeConversationId');
-      if (lastActiveId && data.some(c => c.id === lastActiveId)) {
-        setActiveConversationId(lastActiveId);
-      } else if (data.length > 0 && data.find(c => c.status === 'active')) {
-         setActiveConversationId(data.find(c => c.status === 'active')!.id);
-      } else if (data.length > 0) {
-        // If no active chat, default to the most recent one.
-        // setActiveConversationId(data[0].id);
-      } else {
-        setActiveConversationId(null);
-        setMessages([]);
-      }
     }
     setIsLoadingConversations(false);
   }, []);
@@ -86,6 +74,7 @@ export default function ChatPage() {
       setMessages([]);
       return;
     };
+    setIsLoading(true);
     const { data, error } = await supabase
       .from('messages')
       .select('id, role, content')
@@ -98,6 +87,7 @@ export default function ChatPage() {
     } else {
       setMessages(data.map(m => ({id: m.id, role: m.role as 'user' | 'assistant', content: m.content})));
     }
+    setIsLoading(false);
   }, [toast]);
 
   useEffect(() => {
@@ -181,8 +171,7 @@ export default function ChatPage() {
             const errorData = await response.json();
             errorText = errorData.error || errorText;
         } catch (e) {
-            // Not a JSON error, maybe HTML
-             errorText = await response.text();
+             errorText = "An unexpected error occurred. The API may have crashed.";
         }
         throw new Error(errorText);
       }
@@ -240,8 +229,8 @@ export default function ChatPage() {
          setActiveConversationId(newConversationId);
          await awardBadge('therapy_starter', 'Therapy Starter');
       } else if (activeConversationId) {
-         // The message is already saved by the API route's flush method,
-         // but we refetch to get the persisted ID and timestamp.
+         // The messages are already saved by the API route's flush method,
+         // but we refetch to get the persisted IDs and timestamps.
          await fetchMessages(activeConversationId);
       }
 
@@ -253,6 +242,7 @@ export default function ChatPage() {
         if (activeConversationId) await fetchMessages(activeConversationId);
       } else {
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI.' });
+        // remove the local messages on error
         setMessages(prev => prev.filter(m => m.id !== newUserMessage.id && m.id !== assistantMessageId));
         setInput(currentInput);
       }
@@ -327,12 +317,13 @@ export default function ChatPage() {
         if(error) throw error;
         
         toast({ title: "Conversation Deleted" });
-        await fetchConversations(user.id);
-
+        
         if (activeConversationId === conversationId) {
             setActiveConversationId(null);
             setMessages([]);
         }
+        await fetchConversations(user.id);
+
 
       } catch (error: any) {
          toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to delete conversation.'});

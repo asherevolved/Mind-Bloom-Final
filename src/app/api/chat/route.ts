@@ -100,14 +100,8 @@ export async function POST(req: NextRequest) {
         { role: 'system', content: systemPrompt },
         // Reverse history to have the oldest messages first
         ...(history || []).map(m => ({ role: m.role as 'user'|'assistant', content: m.content })).reverse(),
-        // Current user message is already in history now, so no need to add again if we fetch it.
-        // Let's ensure it's there.
     ];
-    // To be safe, add the current message if it's not in the history yet (which it should be)
-    if (!messagesForApi.find(m => m.role === 'user' && m.content === message)) {
-       messagesForApi.push({ role: 'user', content: message });
-    }
-
+    // The user's message is now saved before fetching history, so it should be included.
 
     const stream = await groq.chat.completions.create({
       messages: messagesForApi,
