@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare } from 'lucide-react';
+import { Bot, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare, Square } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { analyzeSession } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
@@ -129,6 +129,13 @@ export default function ChatPage() {
   const handleNewChat = () => {
     setActiveConversationId(null);
     setMessages([]);
+  };
+
+  const handleStopGenerating = () => {
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+    }
   };
 
   const handleSend = async () => {
@@ -258,7 +265,7 @@ export default function ChatPage() {
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        toast({ title: 'Stream Canceled' });
+        toast({ title: 'Generation stopped' });
       } else {
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI.' });
         setMessages(prev => prev.filter(m => m.id !== newUserMessage.id && m.id !== assistantMessageId));
@@ -497,7 +504,15 @@ export default function ChatPage() {
                 disabled={isLoading || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}
                 className="flex-1"
                 />
-                <Button size="icon" onClick={handleSend} disabled={!input.trim() || isLoading || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}><Send /></Button>
+                 {isLoading ? (
+                    <Button size="icon" variant="outline" onClick={handleStopGenerating}>
+                        <Square className="h-4 w-4"/>
+                    </Button>
+                ) : (
+                    <Button size="icon" onClick={handleSend} disabled={!input.trim() || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}>
+                        <Send />
+                    </Button>
+                )}
             </div>
             </footer>
         </div>
