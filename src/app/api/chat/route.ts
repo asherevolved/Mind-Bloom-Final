@@ -18,16 +18,15 @@ Your Core Principles:
 4.  **Be Warm and Affirming**: Your tone should always be warm, gentle, and supportive.
 5.  **Be Context-Aware**: Refer back to themes or specific points the user has made in the conversation to show you are building a connection and remembering their story.`;
 
-async function getSupabaseClient(jwt: string) {
+async function getSupabaseAdmin() {
     const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
         {
-            global: {
-                headers: {
-                    Authorization: `Bearer ${jwt}`,
-                },
-            },
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false
+            }
         }
     );
     return supabase;
@@ -36,20 +35,13 @@ async function getSupabaseClient(jwt: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, conversationId: currentConversationId } = await req.json();
-    const jwt = req.headers.get('Authorization')?.split('Bearer ')[1];
-
-    if (!jwt) {
+    const { message, conversationId: currentConversationId, user } = await req.json();
+    
+    if (!user) {
       return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
     
-    const supabase = await getSupabaseClient(jwt);
-
-    // Get user from JWT
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
-        return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-    }
+    const supabase = await getSupabaseAdmin();
 
     let conversationId = currentConversationId;
     const isNewConversation = !conversationId;
@@ -95,6 +87,7 @@ export async function POST(req: NextRequest) {
     const messagesForApi: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
         ...(history || []).map(m => ({ role: m.role as 'user'|'assistant', content: m.content })).reverse(),
+        { role: 'user', content: message },
     ];
 
     const stream = await groq.chat.completions.create({
@@ -138,6 +131,7 @@ export async function POST(req: NextRequest) {
                     .eq('id', conversationId);
             }
         }
+        controller.terminate();
       },
     });
 

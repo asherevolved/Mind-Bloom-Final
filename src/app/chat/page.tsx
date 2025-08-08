@@ -155,26 +155,21 @@ export default function ChatPage() {
     setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error("User is not authenticated.");
-      }
-
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           message: currentInput,
           conversationId: activeConversationId,
+          user: user, // Pass user object to API
         }),
         signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok || !response.body) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: 'The AI failed to respond.' }));
         throw new Error(errorData.error || 'The AI failed to respond.');
       }
 
@@ -231,17 +226,16 @@ export default function ChatPage() {
          setActiveConversationId(newConversationId);
          await awardBadge('therapy_starter', 'Therapy Starter');
       } else if (activeConversationId) {
+         // The message is already saved by the API route's flush method,
+         // but we refetch to get the persisted ID and timestamp.
          await fetchMessages(activeConversationId);
-         // Also update the conversation's timestamp
-         await supabase
-            .from('conversations')
-            .update({ updated_at: new Date().toISOString() })
-            .eq('id', activeConversationId);
       }
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
         toast({ title: 'Generation stopped' });
+        // After stopping, we still need to "save" the partial response
+        if (activeConversationId) await fetchMessages(activeConversationId);
       } else {
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI.' });
         setMessages(prev => prev.filter(m => m.id !== newUserMessage.id && m.id !== assistantMessageId));
