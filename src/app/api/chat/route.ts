@@ -18,18 +18,20 @@ Your Core Principles:
 4.  **Be Warm and Affirming**: Your tone should always be warm, gentle, and supportive.
 5.  **Be Context-Aware**: Refer back to themes or specific points the user has made in the conversation to show you are building a connection and remembering their story.`;
 
-async function getSupabaseAdmin() {
-    const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false
-            }
+function getSupabaseAdmin() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error('Missing Supabase URL or service role key for admin client');
+    }
+
+    return createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false
         }
-    );
-    return supabase;
+    });
 }
 
 
@@ -41,7 +43,7 @@ export async function POST(req: NextRequest) {
       return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
     
-    const supabase = await getSupabaseAdmin();
+    const supabaseAdmin = getSupabaseAdmin();
 
     let conversationId = currentConversationId;
     const isNewConversation = !conversationId;
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
     // 1. Create a new conversation if it's the first message
     if (isNewConversation) {
         const title = message.substring(0, 40) + (message.length > 40 ? '...' : '');
-        const { data: convData, error: convError } = await supabase
+        const { data: convData, error: convError } = await supabaseAdmin
           .from('conversations')
           .insert({ title, user_id: user.id })
           .select('id')
@@ -62,7 +64,7 @@ export async function POST(req: NextRequest) {
     }
     
     // 2. Save the user's message
-    const { error: msgError } = await supabase
+    const { error: msgError } = await supabaseAdmin
       .from('messages')
       .insert({ conversation_id: conversationId, role: 'user', content: message });
 
@@ -72,7 +74,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Fetch message history for context
-    const { data: history, error: historyError } = await supabase
+    const { data: history, error: historyError } = await supabaseAdmin
         .from('messages')
         .select('role, content')
         .eq('conversation_id', conversationId)
@@ -116,7 +118,7 @@ export async function POST(req: NextRequest) {
       async flush(controller) {
         // 4. After the stream is complete, save the final AI response
         if (finalResponse.trim()) {
-            const { error: assistantMsgError } = await supabase
+            const { error: assistantMsgError } = await supabaseAdmin
                 .from('messages')
                 .insert({ conversation_id: conversationId, role: 'assistant', content: finalResponse });
             
@@ -125,7 +127,7 @@ export async function POST(req: NextRequest) {
                 // Don't throw, as the user already received the message. Just log it.
             } else {
                  // 5. Update the conversation's timestamp
-                await supabase
+                await supabaseAdmin
                     .from('conversations')
                     .update({ updated_at: new Date().toISOString() })
                     .eq('id', conversationId);
