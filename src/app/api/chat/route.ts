@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     const stream = await groq.chat.completions.create({
       messages: messagesForApi,
-      model: 'llama3-70b-8192',
+      model: 'llama-3.3-70b-versatile',
       stream: true,
     });
 

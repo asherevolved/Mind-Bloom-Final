@@ -54,7 +54,7 @@ const analyzeSessionFlow = ai.defineFlow(
         messages: [
             { role: 'user', content: filledPrompt },
         ],
-        model: 'llama3-70b-8192',
+        model: 'llama-3.3-70b-versatile',
         // @ts-ignore
         response_format: { type: "json_object" },
     });
