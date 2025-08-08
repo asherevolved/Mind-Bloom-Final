@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
+import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
+import { OpenAIEmbeddings } from "@langchain/openai";
 
 export const runtime = 'edge';
 
@@ -16,29 +18,43 @@ Your Core Principles:
 4.  **Be Warm and Affirming**: Your tone should always be warm, gentle, and supportive.
 5.  **Be Context-Aware**: Refer back to themes or specific points the user has made in the conversation to show you are building a connection and remembering their story.`;
 
-export async function POST(req: NextRequest) {
-  try {
-    const { message, conversationId: currentConversationId, user } = await req.json();
-    
-    if (!user) {
-      return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-    }
-    
-    // Correctly initialize Supabase admin client inside the route handler
+// This function creates a Supabase client with the service role key for admin operations.
+// It should only be used in secure server-side environments.
+const createSupabaseAdminClient = () => {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
-        throw new Error('Missing Supabase URL or service role key for admin client');
+        throw new Error('Missing Supabase credentials for admin client');
     }
-
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+    
+    return createClient(supabaseUrl, supabaseServiceKey, {
         auth: {
             autoRefreshToken: false,
             persistSession: false
         }
     });
+};
 
+
+export async function POST(req: NextRequest) {
+  try {
+    const { message, conversationId: currentConversationId } = await req.json();
+    const token = req.headers.get('authorization')?.split(' ')[1];
+
+    if (!token) {
+        return new NextResponse(JSON.stringify({ error: 'Unauthorized: No token provided' }), { status: 401 });
+    }
+
+    const supabaseAdmin = createSupabaseAdminClient();
+    
+    // Get user from token
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+
+    if (userError || !user) {
+        return new NextResponse(JSON.stringify({ error: userError?.message || 'Unauthorized: Invalid token' }), { status: 401 });
+    }
+    
     let conversationId = currentConversationId;
     const isNewConversation = !conversationId;
 
@@ -82,9 +98,16 @@ export async function POST(req: NextRequest) {
 
     const messagesForApi: Groq.Chat.Completions.ChatCompletionMessageParam[] = [
         { role: 'system', content: systemPrompt },
+        // Reverse history to have the oldest messages first
         ...(history || []).map(m => ({ role: m.role as 'user'|'assistant', content: m.content })).reverse(),
-        { role: 'user', content: message },
+        // Current user message is already in history now, so no need to add again if we fetch it.
+        // Let's ensure it's there.
     ];
+    // To be safe, add the current message if it's not in the history yet (which it should be)
+    if (!messagesForApi.find(m => m.role === 'user' && m.content === message)) {
+       messagesForApi.push({ role: 'user', content: message });
+    }
+
 
     const stream = await groq.chat.completions.create({
       messages: messagesForApi,
@@ -99,6 +122,7 @@ export async function POST(req: NextRequest) {
             const metadata = {
                 conversationId: conversationId
             };
+            // Send metadata as the first chunk
             controller.enqueue(`{"metadata":${JSON.stringify(metadata)}}\n\n`);
         }
       },
@@ -120,7 +144,7 @@ export async function POST(req: NextRequest) {
                 console.error('Save assistant message error:', assistantMsgError);
                 // Don't throw, as the user already received the message. Just log it.
             } else {
-                 // 5. Update the conversation's timestamp
+                 // 5. Update the conversation's timestamp to bring it to the top of the list
                 await supabaseAdmin
                     .from('conversations')
                     .update({ updated_at: new Date().toISOString() })
@@ -136,7 +160,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (err: any) {
-    console.error('Server error:', err);
+    console.error('Server error in /api/chat:', err);
     return new NextResponse(JSON.stringify({ error: err.message || 'Server error' }), { status: 500 });
   }
 }

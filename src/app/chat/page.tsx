@@ -71,7 +71,8 @@ export default function ChatPage() {
       } else if (data.length > 0 && data.find(c => c.status === 'active')) {
          setActiveConversationId(data.find(c => c.status === 'active')!.id);
       } else if (data.length > 0) {
-        setActiveConversationId(data[0].id);
+        // If no active chat, default to the most recent one.
+        // setActiveConversationId(data[0].id);
       } else {
         setActiveConversationId(null);
         setMessages([]);
@@ -155,22 +156,35 @@ export default function ChatPage() {
     setMessages(prev => [...prev, { role: 'assistant', content: '', id: assistantMessageId }]);
     
     try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) {
+        throw new Error('Could not get user session.');
+      }
+      const token = sessionData.session.access_token;
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           message: currentInput,
           conversationId: activeConversationId,
-          user: user, // Pass user object to API
         }),
         signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok || !response.body) {
-        const errorData = await response.json().catch(() => ({ error: 'The AI failed to respond.' }));
-        throw new Error(errorData.error || 'The AI failed to respond.');
+         let errorText = 'The AI failed to respond.';
+        try {
+            const errorData = await response.json();
+            errorText = errorData.error || errorText;
+        } catch (e) {
+            // Not a JSON error, maybe HTML
+             errorText = await response.text();
+        }
+        throw new Error(errorText);
       }
 
       const reader = response.body.getReader();
@@ -235,6 +249,7 @@ export default function ChatPage() {
       if (error.name === 'AbortError') {
         toast({ title: 'Generation stopped' });
         // After stopping, we still need to "save" the partial response
+        // which the API route now does automatically. We just need to refetch.
         if (activeConversationId) await fetchMessages(activeConversationId);
       } else {
         toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to get response from AI.' });
