@@ -184,12 +184,9 @@ export default function ChatPage() {
       let finalResponse = '';
       let receivedMetadata = false;
       let newConversationId: string | null = activeConversationId;
-      let newAssistantMessageId: string | null = null;
-
-
+      
       while (!done) {
         if (abortControllerRef.current === null) {
-            // Abort signal was received from the user
             reader.cancel();
             break;
         }
@@ -210,13 +207,6 @@ export default function ChatPage() {
                 if (metadata.conversationId) {
                     newConversationId = metadata.conversationId;
                 }
-                
-                if (metadata.userMessageId) {
-                    setMessages(prev => prev.map(msg => 
-                        msg.id === newUserMessage.id ? {...msg, id: metadata.userMessageId } : msg
-                    ));
-                }
-
                 chunk = chunk.substring(endOfJson + endOfMetadata.length);
                 receivedMetadata = true;
               } catch (e) {
@@ -236,37 +226,17 @@ export default function ChatPage() {
         });
       }
       
-      const convoIdToSave = newConversationId;
-      if (convoIdToSave && finalResponse.trim()) {
-         // Save the assistant's final message
-         const { data: assistantMsgData, error: assistantMsgError } = await supabase
-            .from('messages')
-            .insert({ conversation_id: convoIdToSave, role: 'assistant', content: finalResponse })
-            .select('id')
-            .single();
-
-         if (assistantMsgError || !assistantMsgData) {
-            throw new Error('Could not save AI response.');
-         }
-         newAssistantMessageId = assistantMsgData.id;
-         
-         // Update the message in the UI with the real ID
-         setMessages(prev => prev.map(msg => 
-            msg.id === assistantMessageId ? {...msg, id: newAssistantMessageId! } : msg
-         ));
-
-         // Update the conversation's timestamp
+      if (isNewConversation && newConversationId) {
+         await fetchConversations(user.id);
+         setActiveConversationId(newConversationId);
+         await awardBadge('therapy_starter', 'Therapy Starter');
+      } else if (activeConversationId) {
+         await fetchMessages(activeConversationId);
+         // Also update the conversation's timestamp
          await supabase
             .from('conversations')
             .update({ updated_at: new Date().toISOString() })
-            .eq('id', convoIdToSave);
-
-         // If it was a new conversation, we need to refresh the list and set it active
-         if (isNewConversation) {
-            await fetchConversations(user.id);
-            setActiveConversationId(newConversationId);
-            await awardBadge('therapy_starter', 'Therapy Starter');
-         }
+            .eq('id', activeConversationId);
       }
 
     } catch (error: any) {
@@ -526,5 +496,3 @@ export default function ChatPage() {
     </MainAppLayout>
   );
 }
-
-    
