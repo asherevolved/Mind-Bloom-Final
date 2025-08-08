@@ -188,6 +188,12 @@ export default function ChatPage() {
 
 
       while (!done) {
+        if (abortControllerRef.current === null) {
+            // Abort signal was received from the user
+            reader.cancel();
+            break;
+        }
+
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
         let chunk = decoder.decode(value, { stream: true });
@@ -231,7 +237,7 @@ export default function ChatPage() {
       }
       
       const convoIdToSave = newConversationId;
-      if (convoIdToSave) {
+      if (convoIdToSave && finalResponse.trim()) {
          // Save the assistant's final message
          const { data: assistantMsgData, error: assistantMsgError } = await supabase
             .from('messages')
@@ -520,3 +526,5 @@ export default function ChatPage() {
     </MainAppLayout>
   );
 }
+
+    
