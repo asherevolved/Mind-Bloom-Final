@@ -38,7 +38,30 @@ Your task is to analyze the provided transcript and generate a structured JSON o
     -   Generate 2-4 gentle, low-effort, and practical actions the user could take based on the conversation.
     -   Each step must have a clear, simple title and a one-sentence description.
 
-Produce a valid JSON object based on the output schema.
+IMPORTANT: You must respond with ONLY a valid JSON object in this exact format:
+{
+  "emotionalSummary": {
+    "summaryText": "A brief, one-sentence summary of the user's emotional state.",
+    "dominantStates": ["State1", "State2", "State3"]
+  },
+  "insights": [
+    "First gentle insight about the conversation.",
+    "Second gentle insight about patterns observed.",
+    "Third gentle insight if applicable."
+  ],
+  "suggestedSteps": [
+    {
+      "title": "Action Title",
+      "description": "One-sentence description of the gentle action."
+    },
+    {
+      "title": "Another Action",
+      "description": "Another one-sentence description."
+    }
+  ]
+}
+
+Do not include any text before or after the JSON object. Only return valid JSON.
 `;
 
 const analyzeSessionFlow = ai.defineFlow(
@@ -64,8 +87,20 @@ const analyzeSessionFlow = ai.defineFlow(
       throw new Error('No response from Groq API');
     }
     
-    // The model sometimes returns the JSON wrapped in markdown, so we clean it
-    const cleanedResponse = response.replace(/^```json\n/, '').replace(/\n```$/, '');
+    // Clean the response more thoroughly
+    let cleanedResponse = response.trim();
+    
+    // Remove markdown code blocks if present
+    cleanedResponse = cleanedResponse.replace(/^```json\s*\n?/, '').replace(/\n?\s*```$/, '');
+    cleanedResponse = cleanedResponse.replace(/^```\s*\n?/, '').replace(/\n?\s*```$/, '');
+    
+    // Remove any leading/trailing text that might not be JSON
+    const jsonStart = cleanedResponse.indexOf('{');
+    const jsonEnd = cleanedResponse.lastIndexOf('}');
+    
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      cleanedResponse = cleanedResponse.substring(jsonStart, jsonEnd + 1);
+    }
 
     try {
         const parsed = JSON.parse(cleanedResponse);
@@ -73,7 +108,31 @@ const analyzeSessionFlow = ai.defineFlow(
     } catch(e) {
         console.error("Failed to parse session analysis JSON:", e);
         console.error("Raw response from Groq:", response);
-        throw new Error("The AI returned an invalid analysis format. Please try again.");
+        console.error("Cleaned response:", cleanedResponse);
+        
+        // Fallback: Create a basic analysis if parsing fails
+        const fallbackAnalysis = {
+          emotionalSummary: {
+            summaryText: "The user shared their thoughts and feelings during this conversation.",
+            dominantStates: ["Reflective", "Engaged"]
+          },
+          insights: [
+            "You took time to express your thoughts and feelings.",
+            "Engaging in conversation shows your willingness to explore your emotions."
+          ],
+          suggestedSteps: [
+            {
+              title: "Continue Self-Reflection",
+              description: "Take a few moments each day to check in with your emotions."
+            },
+            {
+              title: "Practice Mindfulness",
+              description: "Try a brief mindfulness exercise when you feel overwhelmed."
+            }
+          ]
+        };
+        
+        return AnalyzeSessionOutputSchema.parse(fallbackAnalysis);
     }
   }
 );

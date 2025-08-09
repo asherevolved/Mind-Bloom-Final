@@ -15,11 +15,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/lib/supabase';
 import { User } from '@supabase/supabase-js';
 
-
 export default function AnalysisPage() {
   const [analysis, setAnalysis] = useState<AnalyzeSessionOutput | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasProcessedData, setHasProcessedData] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const [user, setUser] = useState<User | null>(null);
@@ -35,12 +35,24 @@ export default function AnalysisPage() {
   }, []);
 
   useEffect(() => {
+    // Prevent double execution in React Strict Mode
+    if (hasProcessedData) return;
+    
     try {
+      console.log('Analysis page: Checking sessionStorage for sessionAnalysis');
       const analysisData = sessionStorage.getItem('sessionAnalysis');
+      console.log('Analysis page: Retrieved data:', analysisData);
+      
       if (analysisData) {
-        setAnalysis(JSON.parse(analysisData));
+        console.log('Analysis page: Found analysis data, parsing...');
+        const parsedAnalysis = JSON.parse(analysisData);
+        console.log('Analysis page: Parsed analysis:', parsedAnalysis);
+        setAnalysis(parsedAnalysis);
+        setHasProcessedData(true);
         sessionStorage.removeItem('sessionAnalysis');
-      } else {
+        console.log('Analysis page: Successfully set analysis and removed from sessionStorage');
+      } else if (!hasProcessedData) {
+        console.log('Analysis page: No analysis data found in sessionStorage');
         setError('No session analysis found. Please complete a chat session first.');
       }
     } catch (e) {
@@ -49,7 +61,7 @@ export default function AnalysisPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [hasProcessedData]);
 
   const handleAddTask = async (title: string) => {
     if (!user) {

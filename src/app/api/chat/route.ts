@@ -2,8 +2,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import Groq from 'groq-sdk';
-import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
-import { OpenAIEmbeddings } from "@langchain/openai";
 
 export const runtime = 'edge';
 
@@ -103,54 +101,67 @@ export async function POST(req: NextRequest) {
     ];
     // The user's message is now saved before fetching history, so it should be included.
 
-    const stream = await groq.chat.completions.create({
-      messages: messagesForApi,
-      model: 'llama-3.3-70b-versatile',
-      stream: true,
-    });
-    
-    let finalResponse = '';
-    const transformStream = new TransformStream({
-      async start(controller) {
-        if(isNewConversation) {
-            const metadata = {
-                conversationId: conversationId
-            };
-            // Send metadata as the first chunk
-            controller.enqueue(`{"metadata":${JSON.stringify(metadata)}}\n\n`);
-        }
-      },
-      transform(chunk, controller) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          finalResponse += content;
-          controller.enqueue(content);
-        }
-      },
-      async flush(controller) {
-        // 4. After the stream is complete, save the final AI response
-        if (finalResponse.trim()) {
-            const { error: assistantMsgError } = await supabaseAdmin
-                .from('messages')
-                .insert({ conversation_id: conversationId, role: 'assistant', content: finalResponse });
-            
-            if (assistantMsgError) {
-                console.error('Save assistant message error:', assistantMsgError);
-                // Don't throw, as the user already received the message. Just log it.
-            } else {
-                 // 5. Update the conversation's timestamp to bring it to the top of the list
-                await supabaseAdmin
-                    .from('conversations')
-                    .update({ updated_at: new Date().toISOString() })
-                    .eq('id', conversationId);
-            }
-        }
-        controller.terminate();
-      },
-    });
+    // Use non-streaming approach for better reliability
+    let completion;
+    try {
+      completion = await groq.chat.completions.create({
+        messages: messagesForApi,
+        model: 'llama-3.3-70b-versatile',
+        stream: false,
+        max_tokens: 2000,
+        temperature: 0.7,
+      });
+    } catch (groqError: any) {
+      console.error('Groq API error:', groqError);
+      return new NextResponse(JSON.stringify({ 
+        error: `Groq API error: ${groqError.message || 'Failed to connect to AI service'}` 
+      }), { status: 500 });
+    }
 
-    return new NextResponse(stream.toReadableStream().pipeThrough(transformStream), {
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    const aiResponse = completion.choices[0]?.message?.content || '';
+    
+    if (!aiResponse.trim()) {
+      return new NextResponse(JSON.stringify({ 
+        error: 'AI service returned empty response' 
+      }), { status: 500 });
+    }
+
+    // Save the AI response to database
+    try {
+      const { error: assistantMsgError } = await supabaseAdmin
+        .from('messages')
+        .insert({ conversation_id: conversationId, role: 'assistant', content: aiResponse });
+      
+      if (assistantMsgError) {
+        console.error('Save assistant message error:', assistantMsgError);
+      } else {
+        // Update the conversation's timestamp to bring it to the top of the list
+        await supabaseAdmin
+          .from('conversations')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', conversationId);
+      }
+    } catch (dbError) {
+      console.error('Database error:', dbError);
+      // Don't fail the request if DB save fails, user still gets the response
+    }
+
+    // Create response with metadata if new conversation
+    const responseData: any = {
+      content: aiResponse
+    };
+    
+    if (isNewConversation) {
+      responseData.metadata = {
+        conversationId: conversationId
+      };
+    }
+
+    return new NextResponse(JSON.stringify(responseData), {
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+      },
     });
 
   } catch (err: any) {
