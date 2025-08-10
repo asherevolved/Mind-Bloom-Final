@@ -5,7 +5,14 @@ import Groq from 'groq-sdk';
 
 export const runtime = 'edge';
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+// Lazily construct the Groq client inside the handler to avoid build-time errors when env is missing
+const getGroqClient = () => {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+  return new Groq({ apiKey });
+};
 
 const systemPrompt = `You are Bloom, a warm and empathetic AI therapist. Have natural, flowing conversations like a real human therapist would.
 
@@ -51,6 +58,14 @@ export async function POST(req: NextRequest) {
 
     if (!token) {
         return new NextResponse(JSON.stringify({ error: 'Unauthorized: No token provided' }), { status: 401 });
+    }
+
+    const groq = getGroqClient();
+    if (!groq) {
+      return new NextResponse(
+        JSON.stringify({ error: 'Server not configured: GROQ_API_KEY is missing' }),
+        { status: 500 }
+      );
     }
 
     const supabaseAdmin = createSupabaseAdminClient();
