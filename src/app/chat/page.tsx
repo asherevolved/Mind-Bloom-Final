@@ -435,85 +435,47 @@ export default function ChatPage() {
         throw new Error(errorText);
       }
 
-      // Handle streaming response
-      if (!response.body) {
-        throw new Error('No response body');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let aiResponse = '';
+      // Handle JSON response (non-streaming)
+      const data = await response.json();
+      let aiResponse = typeof data === 'string' ? data : (data.content ?? '');
       let newConversationId: string | null = activeConversationId;
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          
-          // Check if this chunk contains metadata (for new conversations)
-          if (chunk.startsWith('{"metadata":')) {
-            try {
-              const metadataLine = chunk.split('\n')[0];
-              const metadata = JSON.parse(metadataLine);
-              if (metadata.metadata?.conversationId) {
-                newConversationId = metadata.metadata.conversationId;
-              }
-            } catch (e) {
-              // Ignore metadata parsing errors
-            }
-            continue;
-          }
-
-          // Skip any JSON-like content that might be metadata
-          if (chunk.trim().startsWith('{') && chunk.trim().endsWith('}')) {
-            try {
-              const jsonContent = JSON.parse(chunk.trim());
-              // If it's metadata or has content/metadata structure, skip it
-              if (jsonContent.metadata || (jsonContent.content && jsonContent.metadata)) {
-                // Extract conversationId if present
-                if (jsonContent.metadata?.conversationId) {
-                  newConversationId = jsonContent.metadata.conversationId;
-                }
-                continue;
-              }
-            } catch (e) {
-              // Not JSON, proceed normally
-            }
-          }
-
-          // Add chunk to AI response (only if it's not metadata)
-          aiResponse += chunk;
-          
-          // Update the assistant message in real-time
-          setMessages(prev => {
-            const updated = [...prev];
-            const lastMessage = updated[updated.length - 1];
-            if (lastMessage && lastMessage.role === 'assistant') {
-              lastMessage.content = aiResponse;
-            }
-            return updated;
-          });
-        }
-      } finally {
-        reader.releaseLock();
+      if (data?.metadata?.conversationId) {
+        newConversationId = data.metadata.conversationId;
       }
+
+      if (!aiResponse) {
+        throw new Error('Empty AI response');
+      }
+
+      // Update the assistant message in one go
+      setMessages(prev => {
+        const updated = [...prev];
+        const lastMessage = updated[updated.length - 1];
+        if (lastMessage && lastMessage.role === 'assistant') {
+          lastMessage.content = aiResponse;
+        }
+        return updated;
+      });
 
       if (isNewConversation && newConversationId) {
          await fetchConversations(user.id);
          setActiveConversationId(newConversationId);
          await awardBadge('therapy_starter', 'Therapy Starter');
-      } else if (activeConversationId) {
-         // The messages are already saved by the API route's flush method,
-         // but we refetch to get the persisted IDs and timestamps.
-         await fetchMessages(activeConversationId);
-      }
+       } else if (activeConversationId) {
+          // The messages are already saved by the API route's flush method,
+          // but we refetch to get the persisted IDs and timestamps.
+          await fetchMessages(activeConversationId);
+       }
 
-      // Speak the AI response if voice mode is active
-      if (isVoiceModeActive && aiResponse.trim()) {
-        speakText(aiResponse);
-      }
+       // Award voice badge if voice mode was used
+       if (isVoiceModeActive) {
+         await awardBadge('conversationalist', 'Conversationalist');
+       }
+
+       // Speak the AI response if voice mode is active
+       if (isVoiceModeActive && aiResponse.trim()) {
+         speakText(aiResponse);
+       }
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
