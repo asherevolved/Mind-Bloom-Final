@@ -38,30 +38,68 @@ export default function AnalysisPage() {
     // Prevent double execution in React Strict Mode
     if (hasProcessedData) return;
     
-    try {
-      console.log('Analysis page: Checking sessionStorage for sessionAnalysis');
-      const analysisData = sessionStorage.getItem('sessionAnalysis');
-      console.log('Analysis page: Retrieved data:', analysisData);
-      
-      if (analysisData) {
-        console.log('Analysis page: Found analysis data, parsing...');
-        const parsedAnalysis = JSON.parse(analysisData);
-        console.log('Analysis page: Parsed analysis:', parsedAnalysis);
-        setAnalysis(parsedAnalysis);
-        setHasProcessedData(true);
-        sessionStorage.removeItem('sessionAnalysis');
-        console.log('Analysis page: Successfully set analysis and removed from sessionStorage');
-      } else if (!hasProcessedData) {
-        console.log('Analysis page: No analysis data found in sessionStorage');
-        setError('No session analysis found. Please complete a chat session first.');
+    const loadAnalysis = async () => {
+      try {
+        console.log('Analysis page: Checking sessionStorage for sessionAnalysis');
+        const analysisData = sessionStorage.getItem('sessionAnalysis');
+        console.log('Analysis page: Retrieved data:', analysisData);
+        
+        if (analysisData) {
+          console.log('Analysis page: Found analysis data, parsing...');
+          const parsedAnalysis = JSON.parse(analysisData);
+          console.log('Analysis page: Parsed analysis:', parsedAnalysis);
+          setAnalysis(parsedAnalysis);
+          setHasProcessedData(true);
+          sessionStorage.removeItem('sessionAnalysis');
+          console.log('Analysis page: Successfully set analysis and removed from sessionStorage');
+        } else {
+          // Try to get the most recent analysis from database as fallback
+          if (user) {
+            console.log('Analysis page: No sessionStorage data, checking database...');
+            const { data: recentAnalysis, error: dbError } = await supabase
+              .from('conversation_analyses')
+              .select('summary, mood, insights, suggestions')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .single();
+
+            if (recentAnalysis && !dbError) {
+              console.log('Analysis page: Found recent analysis in database');
+              const formattedAnalysis = {
+                emotionalSummary: {
+                  summaryText: recentAnalysis.summary,
+                  dominantStates: recentAnalysis.mood?.dominantStates || []
+                },
+                insights: recentAnalysis.insights || [],
+                suggestedSteps: recentAnalysis.suggestions || []
+              };
+              setAnalysis(formattedAnalysis);
+              setHasProcessedData(true);
+            } else {
+              console.log('Analysis page: No analysis data found');
+              setError('No session analysis found. Please complete a chat session and click "End & Analyze" first.');
+            }
+          } else {
+            setError('Please log in to view your session analysis.');
+          }
+        }
+      } catch (e) {
+        console.error("Could not load session analysis", e);
+        setError('There was an issue loading your session analysis. Please try again.');
+      } finally {
+        setIsLoading(false);
       }
-    } catch (e) {
-      console.error("Could not parse session analysis", e);
-      setError('There was an issue reading your session analysis.');
-    } finally {
-      setIsLoading(false);
+    };
+
+    // Wait for user to be available before loading
+    if (user !== null) {
+      loadAnalysis();
+    } else if (user === null) {
+      // If no user, still check sessionStorage for guest data
+      loadAnalysis();
     }
-  }, [hasProcessedData]);
+  }, [hasProcessedData, user]);
 
   const handleAddTask = async (title: string) => {
     if (!user) {

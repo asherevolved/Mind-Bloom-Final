@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Bot, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare, Square, BarChart3, Mic, MicOff, Volume2, VolumeX, Play, Pause } from 'lucide-react';
+import { Bot, Send, PhoneOff, User, Trophy, Trash2, Plus, MessageSquare, Square, BarChart3, Mic, Volume2 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { analyzeSession } from '@/ai/flows/session-analysis';
 import { useToast } from '@/hooks/use-toast';
@@ -40,7 +40,6 @@ export default function ChatPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [recordingStatus, setRecordingStatus] = useState<'idle' | 'listening' | 'processing'>('idle');
   const [shouldAutoSend, setShouldAutoSend] = useState(false);
   
@@ -139,15 +138,11 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Auto-send effect for voice mode
+  // Auto-send effect for voice mode (now handled directly in recognition)
   useEffect(() => {
-    if (shouldAutoSend && input.trim() && user) {
-      setShouldAutoSend(false);
-      setTimeout(() => {
-        handleSend();
-      }, 500);
-    }
-  }, [shouldAutoSend, input, user]);
+    // This is now handled directly in the speech recognition onresult
+    // Keeping this for backward compatibility but it's not needed for the new flow
+  }, []);
 
   const handleNewChat = () => {
     setActiveConversationId(null);
@@ -176,9 +171,10 @@ export default function ChatPage() {
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    recognition.continuous = true; // More like ChatGPT - keeps listening
+    recognition.interimResults = true; // Show partial results
     recognition.lang = 'en-US';
+    recognition.maxAlternatives = 1; // Only need best result
 
     recognition.onstart = () => {
       setRecordingStatus('listening');
@@ -186,13 +182,40 @@ export default function ChatPage() {
     };
 
     recognition.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setInput(transcript);
-      setRecordingStatus('processing');
+      let transcript = '';
+      let isFinal = false;
       
-      // Auto-send in voice mode
-      if (isVoiceModeActive) {
-        setShouldAutoSend(true);
+      // Process all results
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          transcript += event.results[i][0].transcript;
+          isFinal = true;
+        } else {
+          // Show interim results for better UX
+          transcript += event.results[i][0].transcript;
+        }
+      }
+      
+      setInput(transcript.trim());
+      
+      // Only process final results
+      if (isFinal && transcript.trim()) {
+        setRecordingStatus('processing');
+        recognition.stop(); // Stop listening after getting final result
+        
+        // Auto-send in voice mode immediately (like ChatGPT)
+        if (isVoiceModeActive) {
+          // Store the transcript and trigger auto-send
+          const finalTranscript = transcript.trim();
+          setInput(finalTranscript);
+          
+          // Small delay to ensure state updates, then auto-send
+          setTimeout(() => {
+            if (finalTranscript && user) {
+              handleSend(finalTranscript);
+            }
+          }, 500);
+        }
       }
     };
 
@@ -234,43 +257,102 @@ export default function ChatPage() {
   }, [isRecording]);
 
   const speakText = useCallback((text: string) => {
-    if (!voiceEnabled || typeof window === 'undefined') return;
+    if (typeof window === 'undefined') return;
 
     // Stop any current speech
     stopSpeaking();
 
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
-      utterance.volume = 0.8;
-
-      // Try to use a more natural voice
-      const voices = speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.name.includes('Google') && voice.lang.includes('en')
-      ) || voices.find(voice => voice.lang.includes('en'));
       
-      if (preferredVoice) {
-        utterance.voice = preferredVoice;
-      }
+      // More human-like voice settings
+      utterance.rate = 1.0; // Natural speed
+      utterance.pitch = 1.0; // Natural pitch
+      utterance.volume = 0.95; // Clear volume
 
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        // In voice mode, start listening for the next input after AI finishes speaking
-        if (isVoiceModeActive && !isLoading) {
-          setTimeout(() => {
-            startRecording();
-          }, 1000);
+      // Wait for voices to load if not already loaded
+      const setVoiceAndSpeak = () => {
+        const voices = speechSynthesis.getVoices();
+        
+        // Prioritize the most human-like voices
+        let preferredVoice = null;
+        
+        // First choice: Neural voices (most human-like)
+        preferredVoice = voices.find(voice => 
+          (voice.name.includes('Neural') || voice.name.includes('Premium') || voice.name.includes('Natural')) && 
+          (voice.lang.includes('en-US') || voice.lang.includes('en-GB'))
+        );
+        
+        // Second choice: Google voices (usually good quality)
+        if (!preferredVoice) {
+          preferredVoice = voices.find(voice => 
+            voice.name.includes('Google') && 
+            (voice.lang.includes('en-US') || voice.lang.includes('en-GB'))
+          );
         }
-      };
-      utterance.onerror = () => setIsSpeaking(false);
+        
+        // Third choice: Microsoft voices
+        if (!preferredVoice) {
+          preferredVoice = voices.find(voice => 
+            voice.name.includes('Microsoft') && 
+            (voice.lang.includes('en-US') || voice.lang.includes('en-GB'))
+          );
+        }
+        
+        // Fourth choice: Any English voice
+        if (!preferredVoice) {
+          preferredVoice = voices.find(voice => 
+            voice.lang.includes('en-US') || voice.lang.includes('en-GB')
+          );
+        }
+        
+        // Last resort: Any English voice
+        if (!preferredVoice) {
+          preferredVoice = voices.find(voice => voice.lang.includes('en'));
+        }
+        
+        if (preferredVoice) {
+          utterance.voice = preferredVoice;
+          console.log('Selected voice:', preferredVoice.name, 'Language:', preferredVoice.lang);
+          
+          // Adjust settings based on voice type for more human sound
+          if (preferredVoice.name.includes('Neural') || preferredVoice.name.includes('Premium')) {
+            utterance.rate = 0.95; // Slightly slower for premium voices
+          } else if (preferredVoice.name.includes('Google')) {
+            utterance.rate = 1.0; // Normal rate for Google voices
+          } else {
+            utterance.rate = 0.9; // Slightly slower for other voices
+          }
+        }
 
-      currentUtteranceRef.current = utterance;
-      speechSynthesis.speak(utterance);
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => {
+          setIsSpeaking(false);
+          // In voice mode, start listening for the next input after AI finishes speaking (like ChatGPT)
+          if (isVoiceModeActive && !isLoading) {
+            setTimeout(() => {
+              startRecording();
+            }, 1000); // Natural delay for conversation flow
+          }
+        };
+        utterance.onerror = () => setIsSpeaking(false);
+
+        currentUtteranceRef.current = utterance;
+        speechSynthesis.speak(utterance);
+      };
+
+      // Check if voices are already loaded
+      if (speechSynthesis.getVoices().length > 0) {
+        setVoiceAndSpeak();
+      } else {
+        // Wait for voices to load
+        speechSynthesis.onvoiceschanged = () => {
+          setVoiceAndSpeak();
+          speechSynthesis.onvoiceschanged = null; // Remove listener
+        };
+      }
     }
-  }, [voiceEnabled, isVoiceModeActive, isLoading, startRecording]);
+  }, [isVoiceModeActive, isLoading, startRecording]);
 
   const stopSpeaking = useCallback(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -287,14 +369,14 @@ export default function ChatPage() {
     if (newVoiceMode) {
       toast({ 
         title: 'Voice Mode Activated', 
-        description: 'Speak naturally - I will listen and respond with voice!' 
+        description: 'Speak naturally - I will listen and respond automatically!' 
       });
-      // Start listening immediately in voice mode
+      // Start listening immediately in voice mode (like ChatGPT)
       setTimeout(() => {
         if (!isLoading && !isSpeaking) {
           startRecording();
         }
-      }, 1000);
+      }, 800);
     } else {
       stopRecording();
       stopSpeaking();
@@ -305,10 +387,11 @@ export default function ChatPage() {
     }
   }, [isVoiceModeActive, isLoading, isSpeaking, startRecording, stopRecording, stopSpeaking, toast]);
 
-  const handleSend = async () => {
-    if (!input.trim() || !user) return;
+  const handleSend = async (messageContent?: string) => {
+    const contentToSend = messageContent || input;
+    if (!contentToSend.trim() || !user) return;
   
-    const currentInput = input;
+    const currentInput = contentToSend;
     setInput('');
     setIsLoading(true);
     abortControllerRef.current = new AbortController();
@@ -383,7 +466,24 @@ export default function ChatPage() {
             continue;
           }
 
-          // Add chunk to AI response
+          // Skip any JSON-like content that might be metadata
+          if (chunk.trim().startsWith('{') && chunk.trim().endsWith('}')) {
+            try {
+              const jsonContent = JSON.parse(chunk.trim());
+              // If it's metadata or has content/metadata structure, skip it
+              if (jsonContent.metadata || (jsonContent.content && jsonContent.metadata)) {
+                // Extract conversationId if present
+                if (jsonContent.metadata?.conversationId) {
+                  newConversationId = jsonContent.metadata.conversationId;
+                }
+                continue;
+              }
+            } catch (e) {
+              // Not JSON, proceed normally
+            }
+          }
+
+          // Add chunk to AI response (only if it's not metadata)
           aiResponse += chunk;
           
           // Update the assistant message in real-time
@@ -410,8 +510,8 @@ export default function ChatPage() {
          await fetchMessages(activeConversationId);
       }
 
-      // Speak the AI response if voice is enabled
-      if (voiceEnabled && aiResponse.trim()) {
+      // Speak the AI response if voice mode is active
+      if (isVoiceModeActive && aiResponse.trim()) {
         speakText(aiResponse);
       }
 
@@ -435,12 +535,24 @@ export default function ChatPage() {
 
 
   const handleAnalyzeConversation = async (conversationId: string, shouldEndSession: boolean = false) => {
-    if (!user) return;
+    if (!user) {
+        toast({ variant: 'destructive', title: 'Authentication Error', description: 'Please log in to analyze conversations.' });
+        return;
+    }
+    
+    if (!conversationId) {
+        toast({ variant: 'destructive', title: 'No Conversation Selected', description: 'Please select a conversation to analyze.' });
+        return;
+    }
     
     setIsEndingSession(true);
     toast({ title: "Analyzing conversation...", description: "Please wait while we analyze the conversation." });
 
     try {
+        console.log('Starting analysis for conversation:', conversationId);
+        console.log('User:', user.id);
+        console.log('Should end session:', shouldEndSession);
+        
         // Fetch messages for the specific conversation
         const { data: conversationMessages, error: messagesError } = await supabase
             .from('messages')
@@ -448,10 +560,22 @@ export default function ChatPage() {
             .eq('conversation_id', conversationId)
             .order('created_at', { ascending: true });
 
-        if (messagesError || !conversationMessages || conversationMessages.length === 0) {
-            toast({ variant: 'destructive', title: 'Cannot analyze empty chat', description: "This conversation has no messages to analyze."});
+        console.log('Messages query completed');
+        console.log('Messages fetched:', conversationMessages?.length || 0, 'messages');
+        console.log('Messages error:', messagesError);
+
+        if (messagesError) {
+            console.error('Error fetching messages:', messagesError);
+            toast({ variant: 'destructive', title: 'Database Error', description: `Failed to fetch messages: ${messagesError.message}` });
             return;
         }
+
+        if (!conversationMessages || conversationMessages.length === 0) {
+            toast({ variant: 'destructive', title: 'Cannot analyze empty chat', description: "This conversation has no messages to analyze. Please send at least one message before analyzing."});
+            return;
+        }
+
+        console.log('Messages sample:', conversationMessages.slice(0, 2));
 
         // Update conversation status to ended if requested
         if (shouldEndSession) {
@@ -464,9 +588,49 @@ export default function ChatPage() {
         
         const transcript = conversationMessages.map((msg: any) => `${msg.role === 'user' ? 'User' : 'Bloom'}: ${msg.content}`).join('\n');
         
-        console.log('Starting session analysis with transcript:', transcript);
-        const analysisResult = await analyzeSession({ transcript });
-        console.log('Session analysis completed:', analysisResult);
+        console.log('Starting session analysis with transcript length:', transcript.length);
+        console.log('Transcript preview:', transcript.substring(0, 200) + '...');
+        
+        let analysisResult;
+        try {
+            analysisResult = await analyzeSession({ transcript });
+            console.log('Session analysis completed successfully:', analysisResult);
+        } catch (analysisError) {
+            console.error('Analysis failed:', analysisError);
+            
+            // Create a fallback analysis if the AI analysis fails
+            console.log('Creating fallback analysis...');
+            analysisResult = {
+                emotionalSummary: {
+                    summaryText: "You shared your thoughts and feelings in this conversation, taking time for self-reflection.",
+                    dominantStates: ["Reflective", "Engaged", "Open"]
+                },
+                insights: [
+                    "You took the initiative to engage in a therapeutic conversation, which shows self-awareness.",
+                    "Expressing your thoughts and feelings is an important step in personal growth.",
+                    "Your willingness to explore your emotions demonstrates emotional courage."
+                ],
+                suggestedSteps: [
+                    {
+                        title: "Continue Self-Reflection",
+                        description: "Take a few minutes each day to check in with your emotions and thoughts."
+                    },
+                    {
+                        title: "Practice Mindfulness",
+                        description: "Try a brief mindfulness exercise when you feel overwhelmed or stressed."
+                    },
+                    {
+                        title: "Journal Your Thoughts",
+                        description: "Write down your feelings to better understand your emotional patterns."
+                    }
+                ]
+            };
+            
+            toast({ 
+                title: "Analysis Generated", 
+                description: "Created a basic analysis. AI analysis temporarily unavailable." 
+            });
+        }
 
         // Check if analysis already exists for this conversation
         const { data: existingAnalysis } = await supabase
@@ -503,20 +667,49 @@ export default function ChatPage() {
             if (analysisError) throw analysisError;
         }
 
+                console.log('Analysis workflow completed successfully');
         await awardBadge('self_reflector', 'Self-Reflector');
         
         console.log('Storing analysis in sessionStorage:', analysisResult);
-        sessionStorage.setItem('sessionAnalysis', JSON.stringify(analysisResult));
+        try {
+            sessionStorage.setItem('sessionAnalysis', JSON.stringify(analysisResult));
+            console.log('Successfully stored in sessionStorage');
+        } catch (storageError) {
+            console.error('Failed to store in sessionStorage:', storageError);
+            // Continue anyway - we can still show the analysis
+        }
         
-        await fetchConversations(user.id);
+        // Update the conversations list
+        try {
+            await fetchConversations(user.id);
+            console.log('Conversations refreshed');
+        } catch (fetchError) {
+            console.error('Failed to refresh conversations:', fetchError);
+            // Non-critical error, continue with analysis
+        }
         
         if (shouldEndSession) {
             setActiveConversationId(null);
             setMessages([]);
+            console.log('Session ended, cleared active conversation');
         }
 
-        console.log('Navigating to analysis page');
-        router.push('/analysis');
+        console.log('Navigating to analysis page...');
+        
+        // Ensure everything is ready before navigation
+        setTimeout(() => {
+            try {
+                router.push('/analysis');
+                console.log('Navigation to analysis page initiated');
+            } catch (navError) {
+                console.error('Navigation failed:', navError);
+                toast({ 
+                    variant: 'destructive', 
+                    title: 'Navigation Error', 
+                    description: 'Analysis completed but could not navigate to results page.' 
+                });
+            }
+        }, 200);
 
     } catch(err) {
         console.error("Failed to analyze session:", err);
@@ -530,7 +723,26 @@ export default function ChatPage() {
   };
 
   const handleEndSession = async () => {
-    if (!activeConversationId || !user || messages.length === 0) {
+    console.log('=== handleEndSession called ===');
+    console.log('activeConversationId:', activeConversationId);
+    console.log('user:', user?.id);
+    console.log('messages.length:', messages.length);
+    console.log('conversations:', conversations.length);
+    
+    if (!activeConversationId) {
+      console.log('ERROR: No active conversation ID');
+      toast({ variant: 'destructive', title: 'No Active Conversation', description: "Please start a conversation first."});
+      return;
+    }
+    
+    if (!user) {
+      console.log('ERROR: No user');
+      toast({ variant: 'destructive', title: 'Authentication Required', description: "Please log in to analyze conversations."});
+      return;
+    }
+    
+    if (messages.length === 0) {
+      console.log('ERROR: No messages');
       toast({ variant: 'destructive', title: 'Cannot analyze empty chat', description: "Please send a few messages first."});
       return;
     }
@@ -538,8 +750,12 @@ export default function ChatPage() {
     const currentConversation = conversations.find(c => c.id === activeConversationId);
     const isActiveConversation = currentConversation?.status !== 'ended';
     
+    console.log('currentConversation:', currentConversation);
+    console.log('isActiveConversation:', isActiveConversation);
+    
     // For active conversations, end them and analyze
     // For ended conversations, just analyze them
+    console.log('Calling handleAnalyzeConversation...');
     await handleAnalyzeConversation(activeConversationId, isActiveConversation);
   };
   
@@ -735,25 +951,13 @@ export default function ChatPage() {
             </main>
 
             <footer className="border-t p-4 bg-background">
-            {/* Voice Mode Status */}
-            {(isVoiceModeActive || recordingStatus !== 'idle' || isSpeaking) && (
+            {/* Voice Status - Simplified */}
+            {(recordingStatus === 'listening' || isSpeaking) && (
               <div className="mb-3 p-2 bg-muted rounded-lg text-sm text-center">
-                {isVoiceModeActive && (
-                  <div className="flex items-center justify-center gap-2 text-green-600">
-                    <Volume2 className="h-4 w-4" />
-                    <span>Voice Mode Active</span>
-                  </div>
-                )}
                 {recordingStatus === 'listening' && (
                   <div className="flex items-center justify-center gap-2 text-blue-600">
                     <Mic className="h-4 w-4 animate-pulse" />
                     <span>Listening...</span>
-                  </div>
-                )}
-                {recordingStatus === 'processing' && (
-                  <div className="flex items-center justify-center gap-2 text-yellow-600">
-                    <div className="h-4 w-4 border-2 border-yellow-600 border-t-transparent rounded-full animate-spin" />
-                    <span>Processing...</span>
                   </div>
                 )}
                 {isSpeaking && (
@@ -776,8 +980,8 @@ export default function ChatPage() {
                 className="flex-1"
                 />
                 
-                {/* Voice Controls */}
-                <div className="flex items-center gap-1">
+                {/* Voice Controls - Simplified */}
+                <div className="flex items-center gap-2">
                   {/* Hold to Speak Button */}
                   <Button
                     size="icon"
@@ -790,57 +994,35 @@ export default function ChatPage() {
                     title="Hold to speak"
                     className={cn(
                       "transition-colors",
-                      isRecording && "bg-red-500 hover:bg-red-600 text-white"
+                      isRecording && "bg-blue-500 hover:bg-blue-600 text-white"
                     )}
                   >
-                    {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    <Mic className="h-4 w-4" />
                   </Button>
 
-                  {/* Voice Mode Toggle */}
+                  {/* Voice Mode Toggle - ChatGPT Style */}
                   <Button
                     size="icon"
                     variant={isVoiceModeActive ? "default" : "outline"}
                     onClick={toggleVoiceMode}
                     disabled={isLoading || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}
-                    title={isVoiceModeActive ? "Exit voice mode" : "Enter voice mode"}
+                    title={isVoiceModeActive ? "Exit voice conversation mode" : "Enter voice conversation mode"}
                     className={cn(
-                      "transition-colors",
-                      isVoiceModeActive && "bg-green-500 hover:bg-green-600 text-white"
+                      "relative transition-colors",
+                      isVoiceModeActive && "bg-purple-500 hover:bg-purple-600 text-white"
                     )}
                   >
-                    {isVoiceModeActive ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                    <div className="relative">
+                      <Volume2 className="h-4 w-4" />
+                      {isVoiceModeActive && (
+                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                      )}
+                    </div>
                   </Button>
-
-                  {/* Voice Enable/Disable */}
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    onClick={() => setVoiceEnabled(!voiceEnabled)}
-                    title={voiceEnabled ? "Disable voice responses" : "Enable voice responses"}
-                    className={cn(
-                      "transition-colors",
-                      !voiceEnabled && "bg-gray-500 hover:bg-gray-600 text-white"
-                    )}
-                  >
-                    {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-                  </Button>
-
-                  {/* Stop Speaking Button */}
-                  {isSpeaking && (
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      onClick={stopSpeaking}
-                      title="Stop speaking"
-                      className="bg-red-500 hover:bg-red-600 text-white"
-                    >
-                      <Pause className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
                 
                 {/* Send/Stop Button */}
-                {isLoading ? (
+                 {isLoading ? (
                     <Button size="icon" variant="outline" onClick={handleStopGenerating}>
                         <Square className="h-4 w-4"/>
                     </Button>
