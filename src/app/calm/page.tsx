@@ -9,9 +9,9 @@ import { useState, useRef, useEffect } from 'react';
 import { Slider } from '@/components/ui/slider';
 
 const sounds = [
-    { name: 'Ocean Waves', icon: Waves, path: '/sounds/ocean-waves.mp3' },
-    { name: 'Gentle Wind', icon: Wind, path: '/sounds/gentle-wind.mp3' },
-    { name: 'White Noise', icon: Ear, path: '/sounds/white-noise.mp3' },
+    { name: 'Ocean Waves', icon: Waves, path: '/sounds/Ocean_Waves.m4a' },
+    { name: 'Gentle Wind', icon: Wind, path: '/sounds/Wind_Breeze.mp3' }, // Assuming "Gentle Wind" corresponds to "Wind_Breeze.mp3"
+    { name: 'White Noise', icon: Ear, path: '/sounds/White_Noise.mp3' },
 ];
 
 export default function CalmPage() {
