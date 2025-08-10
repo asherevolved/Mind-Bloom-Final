@@ -25,8 +25,13 @@ export const TherapistChatInputSchema = z.object({
   chatHistory: z.array(z.object({role: z.enum(['user', 'assistant']), content: z.string()})).optional().describe('An array of previous messages in the conversation.'),
 });
 export type TherapistChatInput = z.infer<typeof TherapistChatInputSchema>;
-export type TherapistChatOutput = z.infer<typeof z.string>;
-export type TherapistChatStreamOutput = z.infer<typeof z.string>;
+
+// Define explicit schemas for output types
+export const TherapistChatOutputSchema = z.string();
+export type TherapistChatOutput = z.infer<typeof TherapistChatOutputSchema>;
+
+export const TherapistChatStreamOutputSchema = z.string();
+export type TherapistChatStreamOutput = z.infer<typeof TherapistChatStreamOutputSchema>;
 
 
 // For Session Analysis
