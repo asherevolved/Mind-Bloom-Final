@@ -1027,7 +1027,7 @@ export default function ChatPage() {
                         <Square className="h-4 w-4"/>
                     </Button>
                 ) : (
-                    <Button size="icon" onClick={handleSend} disabled={!input.trim() || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}>
+                    <Button size="icon" onClick={() => handleSend()} disabled={!input.trim() || isEndingSession || !user || conversations.find(c => c.id === activeConversationId)?.status === 'ended'}>
                         <Send />
                     </Button>
                 )}
